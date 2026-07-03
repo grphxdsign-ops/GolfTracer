@@ -1,10 +1,22 @@
 /**
  * Classical (non-ML) golf-ball proposal detector.
  *
- * Pipeline per frame: rolling-median background estimate (a MOG2-lite that a
- * handful of frames is enough to warm) → difference vs background → binary
+ * Pipeline per frame: background estimate → difference vs background → binary
  * threshold → 4-connected components → candidate scoring by circularity,
  * size, and contrast over the local background.
+ *
+ * Two background models:
+ * - 'rolling' (default): per-pixel median over the last `historySize` frames,
+ *   recomputed for the ROI on every detect() (a MOG2-lite that a handful of
+ *   frames is enough to warm). Right for high-fps slow-mo, where the ball
+ *   clears its own recent history within a frame or two.
+ * - 'static': the first `staticWarmupFrames` frames are accumulated and a
+ *   full-frame per-pixel temporal median is frozen ONCE. Right for 30/60 fps
+ *   captures, where a slowly receding ball (a few px/frame late in flight)
+ *   overlaps its own rolling history, gets absorbed into the background, and
+ *   is lost. `staticRefreshAlpha` optionally drifts the frozen model toward
+ *   the current scene (per-pixel EWMA over the detect ROI) so slow lighting
+ *   changes are absorbed; 0 keeps it fully frozen.
  *
  * Research consensus (arXiv 2012.09393 and friends): single-frame CNNs
  * struggle on <20px motion-blurred balls; classical proposals gated by a
@@ -25,11 +37,30 @@ import {
   type Roi,
 } from './imageOps';
 
+/** Background model: rolling short-window median vs frozen warmup median. */
+export type BackgroundMode = 'rolling' | 'static';
+
 export interface ClassicalDetectorOptions {
+  /** Background model. Default 'rolling' (the historical behavior). */
+  backgroundMode?: BackgroundMode;
   /** Frames kept for the rolling-median background. Default 5. */
   historySize?: number;
   /** Frames required before detection starts. Default 3. */
   minHistory?: number;
+  /**
+   * Static mode: frames accumulated before the background is frozen (a
+   * per-pixel temporal median over them). Detection returns [] until then,
+   * like minHistory in rolling mode. Default 5.
+   */
+  staticWarmupFrames?: number;
+  /**
+   * Static mode: per-pixel EWMA rate `bg += α·(cur - bg)` applied over the
+   * detect ROI on every frame after freezing. 0 (default) keeps the model
+   * fully frozen; e.g. 0.02 absorbs slow lighting drift. The background is
+   * 8-bit, so updates smaller than half a grey level (α·|cur-bg| < 0.5)
+   * quantize away — tiny α values only track large scene changes.
+   */
+  staticRefreshAlpha?: number;
   /** Fixed grey-level diff threshold, or 'otsu' to derive per ROI. Default 20. */
   diffThreshold?: number | 'otsu';
   /** Minimum blob circularity (4π·area/perimeter²). Default 0.6. */
@@ -63,8 +94,11 @@ interface HistoryFrame {
 }
 
 export class ClassicalBallDetector implements BallDetector {
+  private readonly backgroundMode: BackgroundMode;
   private readonly historySize: number;
   private readonly minHistory: number;
+  private readonly staticWarmupFrames: number;
+  private readonly staticRefreshAlpha: number;
   private readonly diffThreshold: number | 'otsu';
   private readonly minCircularity: number;
   private readonly minRadiusPx: number;
@@ -74,11 +108,19 @@ export class ClassicalBallDetector implements BallDetector {
   private readonly minFill: number;
   private readonly maxFill: number;
   private readonly polarity: 'bright' | 'both';
+  /** Rolling history in 'rolling' mode; warmup accumulator in 'static'. */
   private history: HistoryFrame[] = [];
+  /** Frozen full-frame background ('static' mode only, null while warming). */
+  private staticBackground: Uint8Array | null = null;
+  private staticWidth = 0;
+  private staticHeight = 0;
 
   constructor(options: ClassicalDetectorOptions = {}) {
+    this.backgroundMode = options.backgroundMode ?? 'rolling';
     this.historySize = options.historySize ?? 5;
     this.minHistory = options.minHistory ?? 3;
+    this.staticWarmupFrames = options.staticWarmupFrames ?? 5;
+    this.staticRefreshAlpha = options.staticRefreshAlpha ?? 0;
     this.diffThreshold = options.diffThreshold ?? 20;
     this.minCircularity = options.minCircularity ?? 0.6;
     this.minRadiusPx = options.minRadiusPx ?? 2;
@@ -92,6 +134,7 @@ export class ClassicalBallDetector implements BallDetector {
 
   reset(): void {
     this.history = [];
+    this.staticBackground = null;
   }
 
   async detect(
@@ -104,17 +147,80 @@ export class ClassicalBallDetector implements BallDetector {
       frame.height,
     );
 
+    if (this.backgroundMode === 'static') {
+      return this.detectStatic(frame, r);
+    }
+
     const usable = this.history.filter(
       (h) => h.width === frame.width && h.height === frame.height,
     );
 
     let observations: BallObservation[] = [];
     if (usable.length >= this.minHistory) {
-      observations = this.detectInRoi(frame, r, usable);
+      const background = this.medianBackground(frame.width, r, usable);
+      observations = this.detectInRoi(frame, r, background);
     }
 
     this.pushHistory(frame);
     return observations;
+  }
+
+  /**
+   * Static-background path: warm up, freeze a full-frame temporal median
+   * once, then detect every subsequent frame against the frozen buffer. A
+   * frame-dimension change (like reset()) discards the model and re-warms.
+   */
+  private detectStatic(frame: VideoFrame, r: Roi): BallObservation[] {
+    if (
+      this.staticBackground &&
+      (this.staticWidth !== frame.width || this.staticHeight !== frame.height)
+    ) {
+      this.staticBackground = null;
+    }
+
+    if (!this.staticBackground) {
+      // Warming: accumulate same-sized frames, freeze when enough are held.
+      this.history = this.history.filter(
+        (h) => h.width === frame.width && h.height === frame.height,
+      );
+      this.history.push({
+        luma: frame.luma.slice(),
+        width: frame.width,
+        height: frame.height,
+      });
+      if (this.history.length >= this.staticWarmupFrames) {
+        this.staticBackground = this.medianBackground(
+          frame.width,
+          { x: 0, y: 0, w: frame.width, h: frame.height },
+          this.history,
+        );
+        this.staticWidth = frame.width;
+        this.staticHeight = frame.height;
+        this.history = [];
+      }
+      return [];
+    }
+
+    const background = extractRoi(this.staticBackground, frame.width, r);
+    const observations = this.detectInRoi(frame, r, background);
+    if (this.staticRefreshAlpha > 0) {
+      this.refreshStaticBackground(frame, r);
+    }
+    return observations;
+  }
+
+  /** EWMA the frozen background toward the current frame inside the ROI. */
+  private refreshStaticBackground(frame: VideoFrame, r: Roi): void {
+    const alpha = this.staticRefreshAlpha;
+    const bg = this.staticBackground!;
+    for (let y = r.y; y < r.y + r.h; y++) {
+      const row = y * frame.width;
+      for (let x = r.x; x < r.x + r.w; x++) {
+        const idx = row + x;
+        // +0.5 rounds; Uint8Array assignment truncates.
+        bg[idx] = bg[idx]! + alpha * (frame.luma[idx]! - bg[idx]!) + 0.5;
+      }
+    }
   }
 
   private pushHistory(frame: VideoFrame): void {
@@ -129,16 +235,16 @@ export class ClassicalBallDetector implements BallDetector {
     }
   }
 
-  private detectInRoi(
-    frame: VideoFrame,
+  /** Per-pixel temporal median over `history`, computed only for the ROI. */
+  private medianBackground(
+    width: number,
     r: Roi,
     history: HistoryFrame[],
-  ): BallObservation[] {
-    // Per-pixel rolling median background, computed only for the ROI.
+  ): Uint8Array {
     const background = new Uint8Array(r.w * r.h);
     const samples = new Array<number>(history.length);
     for (let y = 0; y < r.h; y++) {
-      const srcRow = (r.y + y) * frame.width + r.x;
+      const srcRow = (r.y + y) * width + r.x;
       for (let x = 0; x < r.w; x++) {
         for (let f = 0; f < history.length; f++) {
           samples[f] = history[f]!.luma[srcRow + x]!;
@@ -151,7 +257,14 @@ export class ClassicalBallDetector implements BallDetector {
             : (samples[mid - 1]! + samples[mid]!) >> 1;
       }
     }
+    return background;
+  }
 
+  private detectInRoi(
+    frame: VideoFrame,
+    r: Roi,
+    background: Uint8Array,
+  ): BallObservation[] {
     const current = extractRoi(frame.luma, frame.width, r);
     const diff =
       this.polarity === 'bright'
@@ -222,4 +335,18 @@ export class ClassicalBallDetector implements BallDetector {
     out.sort((a, b) => b.confidence - a.confidence);
     return out;
   }
+}
+
+/**
+ * Fps-aware detector defaults. At normal capture rates (<= 60 fps) the ball's
+ * late-flight image motion is a few px/frame, which a rolling short-window
+ * background absorbs — use the frozen static background instead. High-fps
+ * slow-mo (120/240) keeps the rolling default, where the short window is
+ * correct. Callers spread this under their own options so explicit settings
+ * win.
+ */
+export function detectorDefaultsForFps(
+  captureFps: number,
+): ClassicalDetectorOptions {
+  return captureFps <= 60 ? { backgroundMode: 'static' } : {};
 }
