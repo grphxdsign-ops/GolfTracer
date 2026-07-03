@@ -62,6 +62,30 @@ describe('ImportScreen', () => {
     });
   });
 
+  it('applies the user-declared slo-mo rate when the picker reports none', async () => {
+    const picker = new FakeMediaPickerAdapter([pickedVideo({ fps: 30 })]);
+    render(<ImportScreen picker={picker} createFrameSource={syntheticFor} />);
+    fireEvent.press(screen.getByRole('button', { name: '240 fps slo-mo' }));
+    pressChoose();
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('Review'));
+    expect(useCaptureStore.getState().pendingVideo).toMatchObject({
+      fps: 30,
+      recordedFps: 240,
+      isSlowMotion: true,
+    });
+  });
+
+  it('prefers picker-reported recordedFps over the declared rate', async () => {
+    const picker = new FakeMediaPickerAdapter([
+      pickedVideo({ fps: 30, recordedFps: 120 }),
+    ]);
+    render(<ImportScreen picker={picker} createFrameSource={syntheticFor} />);
+    fireEvent.press(screen.getByRole('button', { name: '240 fps slo-mo' }));
+    pressChoose();
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('Review'));
+    expect(useCaptureStore.getState().pendingVideo?.recordedFps).toBe(120);
+  });
+
   it('shows validation reasons and does not navigate for a bad video', async () => {
     const picker = new FakeMediaPickerAdapter([
       pickedVideo({ durationMs: 800, fps: 15 }),

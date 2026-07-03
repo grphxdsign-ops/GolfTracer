@@ -7,7 +7,7 @@
  * pipeline.
  */
 import { useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -16,7 +16,7 @@ import type { FrameSource, VideoAsset } from '../../../types/media';
 import type { MediaPickerAdapter } from '../../../adapters/media/MediaPickerAdapter';
 import { ImagePickerAdapter } from '../../../adapters/media/ImagePickerAdapter';
 import { NativeFrameSource } from '../../../adapters/frames/NativeFrameSource';
-import { colors, sharedStyles, spacing, typography } from '../../../app/theme';
+import { colors, radii, sharedStyles, spacing, typography } from '../../../app/theme';
 import { validateImportedVideo, type ValidationIssue } from '../logic/validation';
 import { useCaptureStore } from '../logic/captureStore';
 
@@ -32,6 +32,17 @@ export interface ImportScreenProps {
 /** Container fps assumed when the picker cannot report one. */
 export const DEFAULT_IMPORT_FPS = 30;
 
+/**
+ * Photo-library pickers report container fps at best and never the sensor
+ * rate of a slow-motion clip, so the user declares how the clip was filmed.
+ * Picker-reported metadata, when present, still wins over this choice.
+ */
+export const SOURCE_RATES = [
+  { label: 'Standard', recordedFps: undefined },
+  { label: '120 fps slo-mo', recordedFps: 120 },
+  { label: '240 fps slo-mo', recordedFps: 240 },
+] as const;
+
 let importCounter = 0;
 
 export function ImportScreen({ picker, createFrameSource }: ImportScreenProps) {
@@ -46,6 +57,7 @@ export function ImportScreen({ picker, createFrameSource }: ImportScreenProps) {
   const [busy, setBusy] = useState(false);
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [sourceRate, setSourceRate] = useState<number | undefined>(undefined);
 
   const pick = async () => {
     setBusy(true);
@@ -62,6 +74,7 @@ export function ImportScreen({ picker, createFrameSource }: ImportScreenProps) {
       }
       const video = result.video;
       const fps = video.fps ?? DEFAULT_IMPORT_FPS;
+      const recordedFps = video.recordedFps ?? sourceRate;
       const rotationDeg = video.rotationDeg ?? 0;
       const validation = validateImportedVideo({
         durationMs: video.durationMs,
@@ -81,11 +94,10 @@ export function ImportScreen({ picker, createFrameSource }: ImportScreenProps) {
         width: video.width,
         height: video.height,
         fps,
-        recordedFps: video.recordedFps,
+        recordedFps,
         durationMs: video.durationMs,
         rotationDeg: rotationDeg as VideoAsset['rotationDeg'],
-        isSlowMotion:
-          video.recordedFps !== undefined && video.recordedFps > fps,
+        isSlowMotion: recordedFps !== undefined && recordedFps > fps,
         source: 'imported',
         createdAt: Date.now(),
       };
@@ -105,6 +117,36 @@ export function ImportScreen({ picker, createFrameSource }: ImportScreenProps) {
       <Text style={[typography.subtitle, { marginBottom: spacing.lg }]}>
         Slow-motion clips (120/240 fps) give the best tracer.
       </Text>
+
+      <View style={[sharedStyles.card, { marginBottom: spacing.lg }]}>
+        <Text style={[typography.label, { marginBottom: spacing.xs }]}>
+          How was the clip filmed?
+        </Text>
+        <View style={styles.segmentRow}>
+          {SOURCE_RATES.map((rate) => {
+            const selected = rate.recordedFps === sourceRate;
+            return (
+              <Pressable
+                key={rate.label}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => setSourceRate(rate.recordedFps)}
+                style={[styles.segment, selected && styles.segmentSelected]}
+              >
+                <Text
+                  style={[styles.segmentText, selected && styles.segmentTextSelected]}
+                >
+                  {rate.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={[typography.label, { marginTop: spacing.sm }]}>
+          Photo libraries don&apos;t report slow-motion frame rates, so this
+          keeps the ball tracking on the real time base.
+        </Text>
+      </View>
 
       <Pressable
         accessibilityRole="button"
@@ -161,3 +203,31 @@ export function ImportScreen({ picker, createFrameSource }: ImportScreenProps) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  segmentRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceRaised,
+  },
+  segmentSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.accent,
+  },
+  segmentText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  segmentTextSelected: {
+    color: colors.text,
+  },
+});
