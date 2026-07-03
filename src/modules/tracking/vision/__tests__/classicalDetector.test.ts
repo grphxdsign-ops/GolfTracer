@@ -254,10 +254,91 @@ describe('ClassicalBallDetector static background mode (field evidence #3)', () 
   });
 });
 
+describe("polarity 'auto' (bright-preferred, dark fallback)", () => {
+  // Field measurement: a climbing ball flips polarity within one flight —
+  // brighter than the treeline early, darker than open sky late. 'auto' must
+  // keep the bright pass's clutter immunity (dark debris never outranks a
+  // visible ball) while recovering the darker-than-sky half of the flight.
+  const WARMUP = 3;
+
+  function autoDetector() {
+    return new ClassicalBallDetector({
+      backgroundMode: 'static',
+      staticWarmupFrames: WARMUP,
+      polarity: 'auto',
+    });
+  }
+
+  function clip(discs: { cx: number; cy: number; r: number; luma: number }[]) {
+    const rng = mulberry32(11);
+    const frames: VideoFrame[] = [];
+    for (let i = 0; i < WARMUP + 1; i++) {
+      frames.push(
+        renderFrame({
+          index: i,
+          timestampMs: i * 33.3,
+          width: 480,
+          height: 270,
+          discs: i >= WARMUP ? discs : [],
+          noiseAmp: 2,
+          rng,
+        }),
+      );
+    }
+    return frames;
+  }
+
+  it('ranks a bright ball above dark debris of equal shape', async () => {
+    const detector = autoDetector();
+    // Bright ball high in frame plus a dark blob (divot/debris): both are
+    // returned (a dark ball later in flight must stay detectable even when
+    // bright clutter exists elsewhere in a big ROI), but the dark pass's
+    // 0.75 confidence scaling keeps the bright ball ranked first.
+    const frames = clip([
+      { cx: 120, cy: 60, r: 5, luma: 245 },
+      { cx: 300, cy: 90, r: 9, luma: 25 },
+    ]);
+    let out: Awaited<ReturnType<ClassicalBallDetector['detect']>> = [];
+    for (const f of frames) out = await detector.detect(f);
+    expect(out.length).toBeGreaterThanOrEqual(2);
+    expect(Math.hypot(out[0]!.cx - 120, out[0]!.cy - 60)).toBeLessThan(4);
+    const dark = out.find((o) => Math.hypot(o.cx - 300, o.cy - 90) < 5);
+    expect(dark).toBeDefined();
+    expect(dark!.confidence).toBeLessThan(out[0]!.confidence);
+  });
+
+  it('falls back to darker-than-background candidates when bright finds nothing', async () => {
+    // Dark ball against the gradient's brightest region (bg ≈ 110 grey
+    // levels at bottom-right vs disc luma 30).
+    const dark = [{ cx: 420, cy: 240, r: 5, luma: 30 }];
+    const auto = autoDetector();
+    const frames = clip(dark);
+    let out: Awaited<ReturnType<ClassicalBallDetector['detect']>> = [];
+    for (const f of frames) out = await auto.detect(f);
+    expect(out.length).toBeGreaterThan(0);
+    expect(Math.hypot(out[0]!.cx - 420, out[0]!.cy - 240)).toBeLessThan(4);
+
+    // The fixed 'bright' polarity misses the same ball entirely.
+    const bright = new ClassicalBallDetector({
+      backgroundMode: 'static',
+      staticWarmupFrames: WARMUP,
+      polarity: 'bright',
+    });
+    let brightOut: typeof out = [];
+    for (const f of clip(dark)) brightOut = await bright.detect(f);
+    expect(brightOut).toEqual([]);
+  });
+});
+
 describe('detectorDefaultsForFps', () => {
-  it('selects the static background at normal capture rates', () => {
-    expect(detectorDefaultsForFps(30)).toEqual({ backgroundMode: 'static' });
-    expect(detectorDefaultsForFps(60)).toEqual({ backgroundMode: 'static' });
+  it('selects static background, auto polarity, and a 1px size floor at normal capture rates', () => {
+    const expected = {
+      backgroundMode: 'static',
+      polarity: 'auto',
+      minRadiusPx: 1,
+    };
+    expect(detectorDefaultsForFps(30)).toEqual(expected);
+    expect(detectorDefaultsForFps(60)).toEqual(expected);
   });
 
   it('keeps the rolling default for high-fps slow-mo', () => {

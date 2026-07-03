@@ -23,6 +23,10 @@ import {
 } from '../../../adapters/detector';
 import { downsample, type Roi } from '../vision/imageOps';
 import { detectorDefaultsForFps } from '../vision/classicalDetector';
+import {
+  associateGlobally,
+  fallbackSearchRoi,
+} from './globalAssociation';
 import { findImpactFrame } from '../vision/impactDetector';
 import { deriveRoisFromBallPoint } from './roiPlanner';
 import { BallTracker, type BallTrackState, type TrackerOptions } from './tracker';
@@ -167,17 +171,37 @@ export async function runTracking(
   const detector =
     options.detector ??
     createDetector(options.detectorKind ?? 'classical', detectorOptions);
+  // 'auto' polarity's dark fallback is for the confirmed track (ball darker
+  // than open sky late in flight); at seed time it would let dark divot
+  // chunks flying through the corridor start a track, so seeding runs a
+  // bright-only twin warmed on the same frames.
+  const seedDetector =
+    !options.detector && detectorOptions.polarity === 'auto'
+      ? createDetector(options.detectorKind ?? 'classical', {
+          ...detectorOptions,
+          polarity: 'bright',
+        })
+      : undefined;
   const warmStart = Math.max(0, impactIndex - 6);
   for (let i = warmStart; i < impactIndex; i++) {
     await detector.detect(frames[i]!);
+    if (seedDetector) await seedDetector.detect(frames[i]!);
   }
 
   // 4. Track from impact forward. Progress 0.4 → 0.92. launchRoi keeps
   //    anchoring landing height near the tee; seedRoi gates the first
-  //    detection.
+  //    detection. The Kalman process noise is jerk intensity (px²/s⁵), so
+  //    the default tuned for high-fps time-steps is far too stiff at 30 fps —
+  //    the filter's learned deceleration outlives the ball's and the gate
+  //    rejects the real, still-decelerating ball. Caller options win.
+  const captureFps = asset.recordedFps ?? asset.fps;
   const tracker = new BallTracker(detector, {
     launchRoi: impactRoi,
     seedRoi,
+    ...(seedDetector ? { seedDetector } : {}),
+    ...(captureFps > 0 && captureFps <= 60
+      ? { kalman: { processNoise: 4e6 } }
+      : {}),
     ...options.tracker,
   });
   const span = Math.max(1, frames.length - impactIndex);
@@ -189,23 +213,65 @@ export async function runTracking(
   }
   onProgress(0.92);
 
-  const quality = gradeTrack(
+  let quality = gradeTrack(
     tracker.observations.length,
     tracker.points.length,
     tracker.state,
   );
+  let rawObservations = tracker.observations;
+  let rawPoints: { timestampMs: number; interpolated: boolean }[] =
+    tracker.points;
+  let landingPointIndex = tracker.landingPointIndex;
+
+  // 4b. Offline fallback for normal-rate captures: when online seeding lost
+  //     the launch (glints, divots, the tee and the ball's shadow all cross
+  //     the corridor while the ball is still a blur), re-detect every
+  //     post-impact frame and keep the best temporally-consistent chain —
+  //     the ball is the only object whose smooth decelerating climb spans
+  //     the window. Skipped when the caller injected a custom detector,
+  //     which cannot be re-instantiated here.
+  if (
+    (quality === 'failed' || quality === 'low' || rawObservations.length < 10) &&
+    !options.detector &&
+    captureFps > 0 &&
+    captureFps <= 60
+  ) {
+    const fallbackDetector = createDetector(options.detectorKind ?? 'classical', {
+      ...detectorOptions,
+      polarity: 'auto',
+      minRadiusPx: 1,
+    });
+    for (let i = warmStart; i < impactIndex; i++) {
+      await fallbackDetector.detect(frames[i]!);
+    }
+    const chain = await associateGlobally(
+      frames.slice(impactIndex),
+      fallbackDetector,
+      { searchRoi: fallbackSearchRoi(seedRoi, width, height) },
+    );
+    if (chain.length > rawObservations.length) {
+      rawObservations = chain;
+      rawPoints = chain.map((o) => ({
+        timestampMs: o.timestampMs,
+        interpolated: false,
+      }));
+      landingPointIndex = undefined;
+      // Chains have no coasted points, so grade purely on coverage.
+      quality = chain.length >= 15 ? 'high' : chain.length >= 8 ? 'medium' : 'low';
+    }
+  }
 
   // 5. Smooth: centripetal Catmull-Rom through the raw observations, sampled
   //    at every tracked frame timestamp (coasted frames become interpolated
   //    spline points instead of raw Kalman coasts).
-  const control = tracker.observations.map((o) => ({
+  const control = rawObservations.map((o) => ({
     t: o.timestampMs,
     x: o.cx,
     y: o.cy,
   }));
-  const sampleTs = tracker.points.map((p) => p.timestampMs);
+  const sampleTs = rawPoints.map((p) => p.timestampMs);
   const smoothXY = catmullRomSample(control, sampleTs);
-  const smoothedPath: TrackPoint[] = tracker.points.map((p, i) => ({
+  const smoothedPath: TrackPoint[] = rawPoints.map((p, i) => ({
     timestampMs: p.timestampMs,
     x: smoothXY[i]!.x,
     y: smoothXY[i]!.y,
@@ -220,7 +286,7 @@ export async function runTracking(
   //    downsample factor.
   const sx = width > 0 ? nativeWidth / width : 1;
   const sy = height > 0 ? nativeHeight / height : 1;
-  const observations = tracker.observations.map((o) => ({
+  const observations = rawObservations.map((o) => ({
     ...o,
     cx: o.cx * sx,
     cy: o.cy * sy,
@@ -238,7 +304,7 @@ export async function runTracking(
     impactFrameIndex: frames[impactIndex]!.index,
     impactTimestampMs: frames[impactIndex]!.timestampMs,
     apexPointIndex: argMinY(nativePath),
-    landingPointIndex: tracker.landingPointIndex,
+    landingPointIndex,
     frameWidth: nativeWidth,
     frameHeight: nativeHeight,
     quality,

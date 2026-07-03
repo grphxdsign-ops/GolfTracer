@@ -80,13 +80,18 @@ describe('receding 30 fps track (evidence #3 geometry)', () => {
     // default q the filter's learned deceleration outlives the ball's and the
     // track is lost (in both modes) before the rolling median fails.
     const tracker = { kalman: { processNoise: 4e6 } };
+    // Pin the size floor at the scenario's design sensitivity: the fps-aware
+    // defaults lower it to 1 px, which lets the rolling median keep the
+    // slowly-drifting tail ball and would mask the background-model contrast
+    // this control exists to demonstrate.
     const staticRun = await runTracking(makeFrameSource(flight.frames), {
       ballPoint,
+      detectorOptions: { minRadiusPx: 2 },
       tracker,
     });
     const rollingRun = await runTracking(makeFrameSource(flight.frames), {
       ballPoint,
-      detectorOptions: { backgroundMode: 'rolling' },
+      detectorOptions: { backgroundMode: 'rolling', minRadiusPx: 2 },
       tracker,
     });
 

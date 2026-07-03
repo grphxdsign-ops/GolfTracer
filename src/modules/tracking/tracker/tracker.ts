@@ -48,6 +48,21 @@ export interface TrackerOptions {
   landingDescentFrames?: number;
   /** Minimum detector confidence to seed a track. */
   minSeedConfidence?: number;
+  /**
+   * Minimum blob radius (px) to seed a track. Seeds carry no motion history
+   * to gate against, so they need stronger evidence than continuations: a
+   * launch-window ball is a blurred multi-px streak while flying grass and
+   * tee debris are 1-px specks that a sensitive detector floor admits.
+   */
+  seedMinRadiusPx?: number;
+  /**
+   * Detector used ONLY while seeding (idle state); the main detector takes
+   * over once a track exists. Lets seeding run stricter settings than
+   * tracking — e.g. bright-only polarity so dark divot chunks flying through
+   * the corridor can't start a track, while the confirmed track may still
+   * follow the ball dark-against-sky later in flight.
+   */
+  seedDetector?: BallDetector;
   /** Fraction of frame height under which a lost track counts as landed. */
   landingLowFraction?: number;
   kalman?: KalmanOptions;
@@ -60,6 +75,7 @@ export class BallTracker {
   landingPointIndex: number | undefined;
 
   private readonly detector: BallDetector;
+  private readonly seedDetector: BallDetector;
   private readonly seedRoi: Roi;
   private readonly gateChi2: number;
   private readonly maxMisses: number;
@@ -68,6 +84,7 @@ export class BallTracker {
   private readonly maxSearchHalf: number;
   private readonly landingDescentFrames: number;
   private readonly minSeedConfidence: number;
+  private readonly seedMinRadiusPx: number;
   private readonly landingLowFraction: number;
   private readonly kalmanOptions: KalmanOptions;
 
@@ -81,6 +98,7 @@ export class BallTracker {
 
   constructor(detector: BallDetector, options: TrackerOptions) {
     this.detector = detector;
+    this.seedDetector = options.seedDetector ?? detector;
     this.seedRoi = options.seedRoi ?? options.launchRoi;
     this.gateChi2 = options.gateChi2 ?? 9.21;
     this.maxMisses = options.maxMisses ?? 8;
@@ -89,6 +107,7 @@ export class BallTracker {
     this.maxSearchHalf = options.maxSearchHalf ?? 96;
     this.landingDescentFrames = options.landingDescentFrames ?? 4;
     this.minSeedConfidence = options.minSeedConfidence ?? 0.15;
+    this.seedMinRadiusPx = options.seedMinRadiusPx ?? 2;
     this.landingLowFraction = options.landingLowFraction ?? 0.7;
     this.kalmanOptions = options.kalman ?? {};
   }
@@ -174,10 +193,11 @@ export class BallTracker {
 
   private async trySeed(frame: VideoFrame): Promise<void> {
     const roi = clampRoi(this.seedRoi, frame.width, frame.height);
-    const candidates = await this.detector.detect(frame, roi);
+    const candidates = await this.seedDetector.detect(frame, roi);
     let best: BallObservation | null = null;
     for (const c of candidates) {
       if (c.confidence < this.minSeedConfidence) continue;
+      if (c.radiusPx < this.seedMinRadiusPx) continue;
       if (!best || c.confidence > best.confidence) best = c;
     }
     if (!best) return;

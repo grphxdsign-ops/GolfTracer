@@ -83,8 +83,16 @@ export interface ClassicalDetectorOptions {
    * 'bright': ball brighter than background (white ball on grass — also
    * suppresses the dark "ghost" left at the tee right after impact).
    * 'both': absolute difference (ball against sky can be darker).
+   * 'auto': both passes run and merge, with darker-than-background
+   * candidates' confidence scaled by 0.75 so a visible bright ball always
+   * outranks dark debris, shadows, and the tee ghost — without suppressing
+   * the dark half entirely (a hard bright-wins rule hides a dark ball
+   * whenever a large ROI contains any bright clutter). Measured on real
+   * footage: a climbing ball flips polarity mid-flight, brighter than the
+   * treeline (+39..+133 grey levels) then darker than open sky (−35..−63),
+   * so a single fixed polarity loses one half of the flight.
    */
-  polarity?: 'bright' | 'both';
+  polarity?: 'bright' | 'both' | 'auto';
 }
 
 interface HistoryFrame {
@@ -107,7 +115,7 @@ export class ClassicalBallDetector implements BallDetector {
   private readonly maxAspect: number;
   private readonly minFill: number;
   private readonly maxFill: number;
-  private readonly polarity: 'bright' | 'both';
+  private readonly polarity: 'bright' | 'both' | 'auto';
   /** Rolling history in 'rolling' mode; warmup accumulator in 'static'. */
   private history: HistoryFrame[] = [];
   /** Frozen full-frame background ('static' mode only, null while warming). */
@@ -266,11 +274,30 @@ export class ClassicalBallDetector implements BallDetector {
     background: Uint8Array,
   ): BallObservation[] {
     const current = extractRoi(frame.luma, frame.width, r);
+    if (this.polarity === 'auto') {
+      const bright = this.gateBlobs(frame, r, positiveDiff(current, background));
+      const dark = this.gateBlobs(
+        frame,
+        r,
+        positiveDiff(background, current),
+      ).map((o) => ({ ...o, confidence: o.confidence * 0.75 }));
+      const out = bright.concat(dark);
+      out.sort((a, b) => b.confidence - a.confidence);
+      return out;
+    }
     const diff =
       this.polarity === 'bright'
         ? positiveDiff(current, background)
         : absDiff(current, background);
+    return this.gateBlobs(frame, r, diff);
+  }
 
+  /** Threshold → components → shape/contrast gates over a diff image. */
+  private gateBlobs(
+    frame: VideoFrame,
+    r: Roi,
+    diff: Uint8Array,
+  ): BallObservation[] {
     const threshold =
       this.diffThreshold === 'otsu'
         ? Math.max(8, otsuThreshold(diff))
@@ -340,13 +367,20 @@ export class ClassicalBallDetector implements BallDetector {
 /**
  * Fps-aware detector defaults. At normal capture rates (<= 60 fps) the ball's
  * late-flight image motion is a few px/frame, which a rolling short-window
- * background absorbs — use the frozen static background instead. High-fps
- * slow-mo (120/240) keeps the rolling default, where the short window is
- * correct. Callers spread this under their own options so explicit settings
+ * background absorbs — use the frozen static background instead; and a
+ * receding ball crosses backgrounds of both polarities within one flight
+ * (brighter than trees, darker than sky), so prefer-bright-with-dark-fallback
+ * replaces the fixed bright-only default; and by mid-flight the ball shrinks
+ * to a ~1.5-2 px radius-equivalent blob, under the 2 px floor that is right
+ * for slow-mo. High-fps slow-mo (120/240) keeps
+ * the rolling default, where the short window is correct. Callers spread
+ * this under their own options so explicit settings
  * win.
  */
 export function detectorDefaultsForFps(
   captureFps: number,
 ): ClassicalDetectorOptions {
-  return captureFps <= 60 ? { backgroundMode: 'static' } : {};
+  return captureFps <= 60
+    ? { backgroundMode: 'static', polarity: 'auto', minRadiusPx: 1 }
+    : {};
 }
