@@ -4,18 +4,20 @@
  * confidence meter. A low-confidence club-prior fallback is visually
  * distinct — we never dress a guess up as a measurement.
  */
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import type { EstimationMethod, RootStackParamList } from '../../../types';
 import { useSessionStore } from '../../../state/sessionStore';
+import { useBallPointStore } from '../../tracking/screens/ballPointStore';
 import { colors, radii, sharedStyles, spacing, typography } from '../../../app/theme';
 import {
   estimateDistance,
   type DistanceEstimateResult,
 } from '../estimate/estimateDistance';
+import { summarizeEstimate } from '../estimate/diagnostics';
 import { useDistanceStore } from '../distanceStore';
 
 type ResultsNavigation = NativeStackNavigationProp<RootStackParamList, 'Results'>;
@@ -47,6 +49,81 @@ function Chip({ label, value }: { label: string; value: string }) {
     <View style={styles.chip}>
       <Text style={styles.chipValue}>{value}</Text>
       <Text style={typography.label}>{label}</Text>
+    </View>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={typography.label}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
+    </View>
+  );
+}
+
+/**
+ * Collapsible diagnostics for the DTL 3D fit (dtlFit estimates only) —
+ * rendered from the same summarizeEstimate() record the offline validation
+ * grid reports, so the app surfaces exactly what was validated.
+ */
+function FitDetails({ estimate }: { estimate: DistanceEstimateResult }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!estimate.dtlFit) {
+    return null;
+  }
+  const d = summarizeEstimate(estimate);
+  return (
+    <View style={styles.fitDetails}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Toggle fit details"
+        onPress={() => setExpanded((v) => !v)}
+        style={styles.fitDetailsHeader}
+      >
+        <Text style={styles.fitDetailsTitle}>Fit details</Text>
+        <Text style={styles.fitDetailsTitle}>{expanded ? '▾' : '▸'}</Text>
+      </Pressable>
+      {expanded ? (
+        <View>
+          {d.azimuthDeg !== undefined ? (
+            <DetailRow label="Azimuth" value={`${d.azimuthDeg.toFixed(1)}°`} />
+          ) : null}
+          {d.cameraPitchDeg !== undefined ? (
+            <DetailRow
+              label="Camera pitch"
+              value={`${d.cameraPitchDeg.toFixed(1)}°`}
+            />
+          ) : null}
+          {d.cameraHeightM !== undefined ? (
+            <DetailRow
+              label="Camera height"
+              value={`${d.cameraHeightM.toFixed(2)} m`}
+            />
+          ) : null}
+          {d.hfovDeg !== undefined ? (
+            <DetailRow label="Field of view" value={`${d.hfovDeg.toFixed(1)}°`} />
+          ) : null}
+          {d.pixelRms !== undefined ? (
+            <DetailRow label="Fit RMS" value={`${d.pixelRms.toFixed(1)} px`} />
+          ) : null}
+          {d.carrySpreadYards !== undefined ? (
+            <DetailRow
+              label="Carry spread"
+              value={`${d.carrySpreadYards.toFixed(0)} yd`}
+            />
+          ) : null}
+          {d.usedPoints !== undefined ? (
+            <DetailRow label="Points used" value={`${d.usedPoints}`} />
+          ) : null}
+          {d.teeSource !== undefined ? (
+            <DetailRow
+              label="Tee source"
+              value={d.teeSource === 'tap' ? 'Ball tap' : 'Extrapolated'}
+            />
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -85,21 +162,29 @@ export function ResultsScreen() {
   const setDistance = useSessionStore((s) => s.setDistance);
   const reset = useSessionStore((s) => s.reset);
   const resetDraft = useDistanceStore((s) => s.resetDraft);
+  // The user's tap-to-place-ball point (native px) anchors the DTL fit's
+  // tee ray when present.
+  const ballPoint = useBallPointStore((s) => s.ballPoint);
 
   const estimate: DistanceEstimateResult | null = useMemo(() => {
     if (!trackingResult || !calibration) {
       return null;
     }
     const track = trackingResult.track;
-    return estimateDistance(track, calibration, {
-      width: video?.width ?? track.frameWidth,
-      height: video?.height ?? track.frameHeight,
-      fps: video?.fps ?? 30,
-      // Slow-motion clips store media time dilated by fps/recordedFps; the
-      // estimator needs recordedFps to fit physics against real time.
-      recordedFps: video?.recordedFps,
-    });
-  }, [trackingResult, calibration, video]);
+    return estimateDistance(
+      track,
+      calibration,
+      {
+        width: video?.width ?? track.frameWidth,
+        height: video?.height ?? track.frameHeight,
+        fps: video?.fps ?? 30,
+        // Slow-motion clips store media time dilated by fps/recordedFps; the
+        // estimator needs recordedFps to fit physics against real time.
+        recordedFps: video?.recordedFps,
+      },
+      { teePointPx: ballPoint ?? undefined },
+    );
+  }, [trackingResult, calibration, video, ballPoint]);
 
   useEffect(() => {
     if (estimate) {
@@ -204,6 +289,8 @@ export function ResultsScreen() {
         ) : null}
       </View>
 
+      <FitDetails estimate={estimate} />
+
       <Pressable
         accessibilityRole="button"
         onPress={handleNewShot}
@@ -290,5 +377,35 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     backgroundColor: colors.surfaceRaised,
+  },
+  fitDetails: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  fitDetailsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  fitDetailsTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
   },
 });
