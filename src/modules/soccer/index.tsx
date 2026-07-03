@@ -1,52 +1,58 @@
 /**
- * Soccer module — OWNED by the soccer-analysis workstream (W2), which
- * replaces this file's placeholder screens wholesale.
+ * Soccer module — OWNED by the soccer analysis workstream (W2).
  *
- * W1 scaffolds only the barrel shape pinned by the integration contract:
- * `soccerModule` registering the routes 'SoccerAnalyze' and 'SoccerResults'
- * (mounted through App.tsx's existing route cast), so the coordinated
- * registry.ts edit typechecks before the workstreams merge.
+ * Contract: registers exactly the routes 'SoccerAnalyze', 'SoccerResults'
+ * (mounted through App.tsx's existing route cast; NOT added to the frozen
+ * RootStackParamList); consumes useSessionStore().frameSource and publishes
+ * SoccerAnalysisResult via the W1 sports session store.
  */
-import { Text, View } from 'react-native';
-
 import type { ScreenRegistration } from '../../types/modules';
-import { sharedStyles, typography } from '../../app/theme';
+import { SoccerAnalyzeScreen } from './screens/SoccerAnalyzeScreen';
+import { SoccerResultsScreen } from './screens/SoccerResultsScreen';
 
-function SoccerAnalyzePlaceholder() {
-  return (
-    <View style={sharedStyles.screen}>
-      <Text style={typography.title}>Soccer Analysis</Text>
-      <Text style={typography.body}>
-        Shot speed, goal-line cross detection and pose-at-contact analysis
-        land here (soccer workstream).
-      </Text>
-    </View>
-  );
+/**
+ * Structurally AppModule-compatible except for the (frozen) name union;
+ * W1's registry widens `modules` to this structural supertype.
+ */
+export interface SportAppModule {
+  name: string;
+  screens: ScreenRegistration[];
 }
 
-function SoccerResultsPlaceholder() {
-  return (
-    <View style={sharedStyles.screen}>
-      <Text style={typography.title}>Soccer Results</Text>
-      <Text style={typography.body}>
-        Take comparison and GOAL? verdicts land here (soccer workstream).
-      </Text>
-    </View>
-  );
-}
-
-export const soccerModule: { name: string; screens: ScreenRegistration[] } = {
+export const soccerModule: SportAppModule = {
   name: 'soccer',
   screens: [
     {
       route: 'SoccerAnalyze',
-      component: SoccerAnalyzePlaceholder,
-      title: 'Soccer Analysis',
+      component: SoccerAnalyzeScreen,
+      title: 'Analyze Soccer Shot',
     },
     {
       route: 'SoccerResults',
-      component: SoccerResultsPlaceholder,
+      component: SoccerResultsScreen,
       title: 'Soccer Results',
     },
   ],
 };
+
+export type {
+  GoalDetector,
+  GoalDetection,
+  GoalCornerBox,
+  GoalCornerId,
+  GoalDetectorKind,
+  ScriptedGoalDetection,
+} from './goal/GoalDetector';
+export {
+  FakeGoalDetector,
+  TfliteGoalDetector,
+  createGoalDetector,
+  GOAL_CORNER_IDS,
+} from './goal/GoalDetector';
+export { analyzeSoccerTake, type SoccerAnalysisOptions } from './analysis/analyzeSoccerShot';
+export {
+  appendTakeToResult,
+  compareTakes,
+  comparisonInsights,
+  type TakeComparison,
+} from './analysis/takeCompare';
