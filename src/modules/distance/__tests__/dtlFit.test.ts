@@ -530,3 +530,84 @@ describe('fitDtlLaunch on the real DTL clip', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Robust outlier trim
+// ---------------------------------------------------------------------------
+describe('fitDtlLaunch outlier trim', () => {
+  jest.setTimeout(120000);
+
+  /**
+   * The exact production failure: the offline association glued a two-point
+   * debris prefix (verbatim from the auto-tracked real clip) onto the clean
+   * 12-point chain. Untrimmed, the best fit's RMS was ~136 px against an
+   * 11 px threshold and the rung declined 'poor-fit' — the honest club-prior
+   * fallback then reported 219 yd at 0.26 for a shot the data can measure.
+   */
+  const DEBRIS_PREFIX: [number, number, number][] = [
+    [500, 1267, 267],
+    [495, 1166, 300],
+  ];
+
+  function poisonedTrack(): BallTrack {
+    return trackFromPath(
+      [...DEBRIS_PREFIX, ...REAL_OBS].map(([x, y, ms]) => ({
+        timestampMs: ms,
+        x,
+        y,
+        interpolated: false,
+      })),
+      REAL_IMPACT_MS,
+    );
+  }
+
+  let cleanFit: DtlFitResult;
+  let trimmedFit: DtlFitResult;
+
+  beforeAll(() => {
+    cleanFit = fitDtlLaunch(realClipTrack(), realClipModel(), 'driver', {
+      teePointPx: REAL_TEE,
+    });
+    trimmedFit = fitDtlLaunch(poisonedTrack(), realClipModel(), 'driver', {
+      teePointPx: REAL_TEE,
+    });
+  });
+
+  it('drops the measured debris prefix and converges on the real chain', () => {
+    expect(trimmedFit.converged).toBe(true);
+    expect(trimmedFit.trimmedPoints).toBe(2);
+    expect(trimmedFit.usedPoints).toBe(REAL_OBS.length);
+    expect(trimmedFit.pixelRms).toBeLessThanOrEqual(trimmedFit.rmsThreshold);
+    expect(trimmedFit.carryYards).toBeGreaterThanOrEqual(140);
+    expect(trimmedFit.carryYards).toBeLessThanOrEqual(300);
+  });
+
+  it('agrees with the clean-chain fit it recovered', () => {
+    expect(cleanFit.converged).toBe(true);
+    expect(
+      Math.abs(trimmedFit.carryYards - cleanFit.carryYards),
+    ).toBeLessThanOrEqual(0.15 * cleanFit.carryYards);
+  });
+
+  it('a fit that already passes the RMS gate is never trimmed', () => {
+    expect(cleanFit.trimmedPoints).toBe(0);
+  });
+
+  it('never trims uniformly poor data into a fake convergence', () => {
+    // Constant-velocity streak: every residual is comparably wrong, so the
+    // median-relative cut keeps (nearly) everything and the decline stands.
+    const path: TrackPoint[] = [];
+    for (let i = 0; i < 12; i++) {
+      path.push({
+        timestampMs: 1100 + (i * 1000) / 30,
+        x: 600 - 8 * i,
+        y: 1000 - 30 * i,
+        interpolated: false,
+      });
+    }
+    const fit = fitDtlLaunch(trackFromPath(path, 1000), realClipModel(), 'driver', {
+      teePointPx: { x: 700, y: 1650 },
+    });
+    expect(fit.converged).toBe(false);
+  });
+});

@@ -104,8 +104,16 @@ export interface DtlFitResult {
   pixelRms: number;
   /** Pixel RMS threshold used for the convergence decision, px. */
   rmsThreshold: number;
-  /** Number of post-impact track points used. */
+  /** Number of post-impact track points used (after any outlier trim). */
   usedPoints: number;
+  /**
+   * Samples dropped by the robust outlier-trim pass (0 = none). Global
+   * association can glue a short debris/club prefix onto an otherwise clean
+   * chain; those points carry maximum leverage on the launch fit, so when
+   * the best fit misses the RMS gate, gross residual outliers are dropped
+   * once and the multi-start refit runs on the survivors.
+   */
+  trimmedPoints: number;
   /** Full-flight carry of the best fit, yd. */
   carryYards: number;
   /** Max − min carry over the near-optimal ensemble, yd. */
@@ -222,6 +230,20 @@ const INVALID_J = 1e6;
 const BOUND_EPS = 0.01;
 /** Net horizontal image-motion deadband for the azimuth seed, px. */
 const AZIMUTH_SEED_DEADBAND_PX = 5;
+/**
+ * Robust outlier trim (single pass): when the best fit misses rmsThreshold,
+ * samples whose residual exceeds max(TRIM_MEDIAN_FACTOR·median residual,
+ * rmsThreshold) are dropped and the multi-start fit reruns on the survivors.
+ * Measured need: on the real 30 fps DTL clip the offline association glued
+ * a two-point debris prefix (~130 px off the true arc) onto an otherwise
+ * clean 12-point chain; leading points carry maximum leverage on the launch
+ * fit and Huber weighting alone cannot rescue a 12-good/2-gross track. The
+ * median-based cut leaves genuinely bad fits alone (median residual is
+ * itself huge, so nothing passes the trim), keeping the decline honest.
+ */
+const TRIM_MEDIAN_FACTOR = 3;
+/** Cap on the fraction of samples the trim pass may drop. */
+const TRIM_MAX_FRACTION = 0.25;
 
 /** Mirrors estimateDistance's QUALITY_FACTOR (pinned confidence formula). */
 const QUALITY_FACTOR: Record<TrackQuality, number> = {
@@ -351,7 +373,7 @@ export function fitDtlLaunch(
   const hfovOf = (focalPx: number): number =>
     radToDeg(2 * Math.atan(model.imageWidth / (2 * focalPx))); // deg
 
-  const samples = collectSamples(track, model.timeScale);
+  let samples = collectSamples(track, model.timeScale);
 
   const fallbackTee: PixelPoint = opts?.teePointPx ??
     (track.smoothedPath.length > 0
@@ -376,6 +398,7 @@ export function fitDtlLaunch(
     pixelRms: Number.POSITIVE_INFINITY,
     rmsThreshold,
     usedPoints: samples.length,
+    trimmedPoints: 0,
     carryYards: 0,
     carrySpreadYards: 0,
     speedObsCostPx: 0,
@@ -412,8 +435,9 @@ export function fitDtlLaunch(
   }
 
   // --- Objective ------------------------------------------------------------
-  const lastSample = samples[samples.length - 1]!;
-  const simCapS = lastSample.t + SIM_OVERHANG_S; // s
+  // Computed from the untrimmed set: after a trim the cap is a superset of
+  // what the surviving samples need, which is safe for the flight cache.
+  const simCapS = samples[samples.length - 1]!.t + SIM_OVERHANG_S; // s
 
   // Partial-flight cache keyed by (v rounded 0.25 mph, α rounded 0.1°, spin).
   const flightCache = new Map<string, FlightResult>();
@@ -485,6 +509,38 @@ export function fitDtlLaunch(
     };
   };
 
+  /** Per-sample 2D residual distances (px), or null on invalid geometry. */
+  const perSampleResiduals = (
+    p: FitParams,
+    spinRpm: number,
+  ): number[] | null => {
+    const { cameraCenter } = geometryFor(p.thetaDeg, p.focalPx);
+    const pose: CameraPose = {
+      cameraCenter,
+      pitchDeg: p.thetaDeg,
+      focalPx: p.focalPx,
+      cx,
+      cy,
+    };
+    const flight = flightFor(p.vMph, p.alphaDeg, spinRpm);
+    const psi = degToRad(p.psiDeg);
+    const cosPsi = Math.cos(psi);
+    const sinPsi = Math.sin(psi);
+    const out: number[] = [];
+    for (const s of samples) {
+      const sim = trajectoryAt(flight.trajectory, s.t); // m (planar)
+      const proj = projectWorldPoint(
+        { x: sim.x * cosPsi, y: sim.x * sinPsi, z: sim.y },
+        pose,
+      );
+      if (proj.zc < MIN_DEPTH_M) {
+        return null;
+      }
+      out.push(Math.hypot(proj.u - s.u, proj.v - s.v)); // px
+    }
+    return out;
+  };
+
   const paramsFromRaw = (raw: number[]): FitParams => {
     const hfovDeg = fitFov ? clamp(raw[4]!, HFOV_BOUNDS) : hfovOf(model.focalLengthPx);
     return {
@@ -545,66 +601,114 @@ export function fitDtlLaunch(
     };
 
   // --- Multi-start Nelder–Mead ----------------------------------------------
-  // Azimuth seed from the sign of the net horizontal image motion:
-  // image-left (u decreasing) means world-left, i.e. ψ > 0.
-  const netDu = lastSample.u - samples[0]!.u; // px
-  const psiSeed =
-    netDu < -AZIMUTH_SEED_DEADBAND_PX ? 8 : netDu > AZIMUTH_SEED_DEADBAND_PX ? -8 : 0;
-  // Pitch seed: the θ putting the derived camera height at the prior mean.
-  const seedFocalPx = fitFov ? focalOf(HFOV_PRIOR_MEAN_DEG) : model.focalLengthPx;
-  const thetaSeed =
-    solvePitchForHeight(
-      teePointPx,
-      seedFocalPx,
-      cx,
-      cy,
-      seedFocalPx * teeMetersPerPixel,
-      HEIGHT_PRIOR_MEAN_M,
-      PITCH_BOUNDS,
-    ) ?? 0;
-
-  const speedSeeds = [-1.5, 0, 1.5].map(
-    (k) => prior.ballSpeedMph.mean + k * prior.ballSpeedMph.sd,
-  );
-  const psiSeeds = [psiSeed - 6, psiSeed + 6];
-  const spinSeeds = [
-    prior.spinRpm.mean - prior.spinRpm.sd,
-    prior.spinRpm.mean + prior.spinRpm.sd,
-  ];
-
   const nmStep = fitFov ? [4, 1.5, 2, 2, 2] : [4, 1.5, 2, 2];
-  const results: StartResult[] = [];
-  for (const v0 of speedSeeds) {
-    for (const psi0 of psiSeeds) {
-      for (const spin of spinSeeds) {
-        const x0 = [
-          clamp(v0, SPEED_BOUNDS),
-          clamp(prior.launchAngleDeg.mean, ANGLE_BOUNDS),
-          clamp(psi0, AZIMUTH_BOUNDS),
-          clamp(thetaSeed, PITCH_BOUNDS),
-        ];
-        if (fitFov) {
-          x0.push(HFOV_PRIOR_MEAN_DEG);
+  // Seeds are recomputed per run: after an outlier trim the net image
+  // motion (azimuth seed) and — for extrapolated tees — the tee pixel both
+  // change with the surviving samples.
+  const runStarts = (): StartResult[] => {
+    // Azimuth seed from the sign of the net horizontal image motion:
+    // image-left (u decreasing) means world-left, i.e. ψ > 0.
+    const netDu = samples[samples.length - 1]!.u - samples[0]!.u; // px
+    const psiSeed =
+      netDu < -AZIMUTH_SEED_DEADBAND_PX ? 8 : netDu > AZIMUTH_SEED_DEADBAND_PX ? -8 : 0;
+    // Pitch seed: the θ putting the derived camera height at the prior mean.
+    const seedFocalPx = fitFov ? focalOf(HFOV_PRIOR_MEAN_DEG) : model.focalLengthPx;
+    const thetaSeed =
+      solvePitchForHeight(
+        teePointPx,
+        seedFocalPx,
+        cx,
+        cy,
+        seedFocalPx * teeMetersPerPixel,
+        HEIGHT_PRIOR_MEAN_M,
+        PITCH_BOUNDS,
+      ) ?? 0;
+
+    const speedSeeds = [-1.5, 0, 1.5].map(
+      (k) => prior.ballSpeedMph.mean + k * prior.ballSpeedMph.sd,
+    );
+    const psiSeeds = [psiSeed - 6, psiSeed + 6];
+    const spinSeeds = [
+      prior.spinRpm.mean - prior.spinRpm.sd,
+      prior.spinRpm.mean + prior.spinRpm.sd,
+    ];
+
+    const out: StartResult[] = [];
+    for (const v0 of speedSeeds) {
+      for (const psi0 of psiSeeds) {
+        for (const spin of spinSeeds) {
+          const x0 = [
+            clamp(v0, SPEED_BOUNDS),
+            clamp(prior.launchAngleDeg.mean, ANGLE_BOUNDS),
+            clamp(psi0, AZIMUTH_BOUNDS),
+            clamp(thetaSeed, PITCH_BOUNDS),
+          ];
+          if (fitFov) {
+            x0.push(HFOV_PRIOR_MEAN_DEG);
+          }
+          const objective = objectiveFor(spin);
+          const nm = nelderMead(objective, x0, {
+            step: nmStep,
+            maxIterations: 250,
+            fTolerance: 1e-3,
+            xTolerance: 1e-3,
+          });
+          out.push({ ...paramsFromRaw(nm.x), spinRpm: spin, j: nm.fx });
         }
-        const objective = objectiveFor(spin);
-        const nm = nelderMead(objective, x0, {
-          step: nmStep,
-          maxIterations: 250,
-          fTolerance: 1e-3,
-          xTolerance: 1e-3,
-        });
-        results.push({ ...paramsFromRaw(nm.x), spinRpm: spin, j: nm.fx });
+      }
+    }
+    return out;
+  };
+
+  let results = runStarts();
+  let startsRun = results.length;
+  results.sort((a, b) => a.j - b.j);
+  let best = results[0]!;
+  let bestStats = residualStats(best, best.spinRpm);
+  if (!Number.isFinite(best.j) || bestStats.invalid || best.j >= INVALID_J) {
+    return decline('poor-fit', { startsRun });
+  }
+
+  // --- Robust outlier trim (single pass) --------------------------------------
+  // Only when the fit would otherwise fail the RMS gate: drop samples whose
+  // residual is grossly off the best fit's arc and rerun the starts. The
+  // median-relative cut means a uniformly bad fit trims nothing (median is
+  // itself huge) and declines exactly as before.
+  let trimmedPoints = 0;
+  if (bestStats.pixelRms > rmsThreshold && samples.length > DTL_MIN_POINTS) {
+    const resids = perSampleResiduals(best, best.spinRpm);
+    if (resids) {
+      const sorted = [...resids].sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)]!;
+      const cut = Math.max(TRIM_MEDIAN_FACTOR * median, rmsThreshold); // px
+      const keep = samples.filter((_, i) => resids[i]! <= cut);
+      const dropped = samples.length - keep.length;
+      if (
+        dropped > 0 &&
+        keep.length >= DTL_MIN_POINTS &&
+        dropped <= Math.ceil(samples.length * TRIM_MAX_FRACTION)
+      ) {
+        samples = keep;
+        trimmedPoints = dropped;
+        if (teeSource === 'extrapolated') {
+          teePointPx = teePointFromTrack(samples);
+        }
+        results = runStarts();
+        startsRun += results.length;
+        results.sort((a, b) => a.j - b.j);
+        best = results[0]!;
+        bestStats = residualStats(best, best.spinRpm);
+        if (
+          !Number.isFinite(best.j) ||
+          bestStats.invalid ||
+          best.j >= INVALID_J
+        ) {
+          return decline('poor-fit', { startsRun, trimmedPoints });
+        }
       }
     }
   }
 
-  const startsRun = results.length;
-  results.sort((a, b) => a.j - b.j);
-  const best = results[0]!;
-  const bestStats = residualStats(best, best.spinRpm);
-  if (!Number.isFinite(best.j) || bestStats.invalid || best.j >= INVALID_J) {
-    return decline('poor-fit', { startsRun });
-  }
   const ensemble = results.filter((r) => r.j <= best.j + ENSEMBLE_J_WINDOW);
 
   // Full (untruncated) flight for every ensemble member — the carry spread
@@ -694,6 +798,7 @@ export function fitDtlLaunch(
     pixelRms: bestStats.pixelRms,
     rmsThreshold,
     usedPoints: samples.length,
+    trimmedPoints,
     carryYards,
     carrySpreadYards,
     speedObsCostPx,
