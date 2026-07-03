@@ -1,10 +1,24 @@
 /**
- * Module registry — FROZEN after scaffold. Workstreams plug in by fleshing
- * out their own module's index.tsx; this file is NEVER edited again.
+ * Module registry — the single coordinated shell edit point (owned by the
+ * sports-engine workstream). Workstreams plug in by fleshing out their own
+ * module's index.tsx; only this list is shared.
+ *
+ * `modules` is annotated with a structural supertype of AppModule so the
+ * sport modules (whose names are not in AppModule's closed union) register
+ * without touching the frozen src/types/modules.ts — AppModule values stay
+ * assignable, and App.tsx only ever reads `screens`.
  */
-import type { AppModule } from '../types/modules';
+import type { ScreenRegistration } from '../types/modules';
 import { captureModule } from '../modules/capture';
 import { trackingModule } from '../modules/tracking';
 import { distanceModule } from '../modules/distance';
+import { soccerModule } from '../modules/soccer';
+import { perfectedModule } from '../modules/perfected';
 
-export const modules: AppModule[] = [captureModule, trackingModule, distanceModule];
+export const modules: { screens: ScreenRegistration[]; name: string }[] = [
+  captureModule,
+  trackingModule,
+  distanceModule,
+  soccerModule,
+  perfectedModule,
+];

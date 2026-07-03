@@ -11,16 +11,20 @@ describe('App shell', () => {
     expect(screen.getByText('Import')).toBeTruthy();
   });
 
-  it('registers all fixed routes exactly once across modules', () => {
+  it('registers all fixed and sport routes exactly once across modules', () => {
     const routes = modules.flatMap((m) => m.screens.map((s) => s.route));
     expect([...routes].sort()).toEqual(
       [
         'Analyze',
         'Calibration',
         'Import',
+        'PerfectedAction',
+        'PerfectedResults',
         'Record',
         'Results',
         'Review',
+        'SoccerAnalyze',
+        'SoccerResults',
         'TracerPreview',
       ].sort(),
     );

@@ -7,6 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../../types/navigation';
+import { navigateSport } from '../../modules/sports/navSport';
 import { useSessionStore } from '../../state/sessionStore';
 import { colors, sharedStyles, spacing, typography } from '../theme';
 
@@ -117,6 +118,14 @@ export function HomeScreen() {
         label="Distance"
         disabled={trackingResult === null}
         onPress={() => navigation.navigate('Calibration')}
+      />
+      <ActionButton
+        label="Soccer Analysis"
+        onPress={() => navigateSport(navigation, 'SoccerAnalyze')}
+      />
+      <ActionButton
+        label="Perfected Action"
+        onPress={() => navigateSport(navigation, 'PerfectedAction')}
       />
     </View>
   );
