@@ -38,5 +38,17 @@ target 'GolfTracerAI' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+    # Some dependencies (e.g. react-native-image-picker) ship a legacy
+    # IPHONEOS_DEPLOYMENT_TARGET of 9.0, which is below the range Xcode 15/16
+    # supports and warns on. Raise every pod to the app's minimum so the
+    # deployment-target warnings clear.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        current = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+        if current && current.to_f < 13.4
+          config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.4'
+        end
+      end
+    end
   end
 end
