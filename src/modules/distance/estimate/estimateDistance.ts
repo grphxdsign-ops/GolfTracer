@@ -5,6 +5,11 @@
  *      the landing: measure the landing point directly (most robust).
  *   2. 'physics-fit' — the launch fit converged: simulate the fitted launch
  *      to carry, extrapolating partial/occluded tracks physically.
+ *   2b. receding fit — behind/down-the-line views where the planar fit is
+ *      geometrically hopeless: a perspective reprojection fit of simulator
+ *      trajectories (see recedingFit.ts). Reported under the same
+ *      'physics-fit' method label with a `recedingFit` diagnostic, and
+ *      confidence capped at RECEDING_MAX_CONFIDENCE.
  *   3. 'club-prior'  — honest fallback to the club's average launch,
  *      confidence capped at 0.3 and flagged distinctly in the UI (never
  *      pretend a guessed arc is a measurement).
@@ -29,6 +34,11 @@ import {
 } from '../calibration/calibrate';
 import { applyHomography } from '../calibration/homography';
 import { fitLaunchFromTrack, type LaunchFitResult } from './launchFit';
+import {
+  fitRecedingLaunch,
+  RECEDING_MAX_CONFIDENCE,
+  type RecedingFitResult,
+} from './recedingFit';
 
 /** DistanceEstimate plus diagnostics the Results screen can surface. */
 export interface DistanceEstimateResult extends DistanceEstimate {
@@ -36,6 +46,8 @@ export interface DistanceEstimateResult extends DistanceEstimate {
   flightTimeS?: number;
   landingAngleDeg?: number;
   fit?: LaunchFitResult;
+  /** Receding-ball depth fit, when the rung was attempted (see recedingFit). */
+  recedingFit?: RecedingFitResult;
 }
 
 const QUALITY_FACTOR: Record<TrackQuality, number> = {
@@ -55,6 +67,18 @@ const CLUB_PRIOR_MAX_CONFIDENCE = 0.3;
 
 function clamp01(v: number): number {
   return Math.min(Math.max(v, 0), 1);
+}
+
+function recedingConfidence(
+  quality: TrackQuality,
+  rfit: RecedingFitResult,
+): number {
+  const rmsFactor = clamp01(1.2 - rfit.pixelRms / rfit.rmsThreshold);
+  const pointFactor = clamp01(rfit.usedPoints / 16 + 0.5);
+  return Math.min(
+    RECEDING_MAX_CONFIDENCE,
+    0.5 * QUALITY_FACTOR[quality] * rmsFactor * pointFactor,
+  );
 }
 
 function homographyConfidence(
@@ -160,6 +184,37 @@ export function estimateDistance(
     };
   }
 
+  // Rung 2b: perspective (receding-ball) fit for behind/down-the-line views
+  // where the planar fit is geometrically unable to converge.
+  let recedingFit: RecedingFitResult | undefined;
+  if (
+    !fittedFlight &&
+    (model.cameraAngle === 'behind' || model.cameraAngle === 'down-the-line')
+  ) {
+    recedingFit = fitRecedingLaunch(track, model, club);
+    if (recedingFit.converged) {
+      const flight = simulateFlight(recedingFit.launch);
+      return {
+        carryYards: flight.carryYards,
+        totalYards: totalFromCarry(
+          flight.carryYards,
+          flight.landingAngleDeg,
+          club,
+        ),
+        apexFeet: flight.apexFeet,
+        ballSpeedMph: recedingFit.launch.ballSpeedMph,
+        launchAngleDeg: recedingFit.launch.launchAngleDeg,
+        backspinRpm: recedingFit.launch.backspinRpm,
+        flightTimeS: flight.flightTimeS,
+        landingAngleDeg: flight.landingAngleDeg,
+        confidence: recedingConfidence(track.quality, recedingFit),
+        method: 'physics-fit',
+        fit,
+        recedingFit,
+      };
+    }
+  }
+
   // Rung 3: honest fallback to the club prior.
   const launch = priorLaunch(club);
   const flight = simulateFlight(launch);
@@ -178,5 +233,6 @@ export function estimateDistance(
     ),
     method: 'club-prior',
     fit,
+    recedingFit,
   };
 }

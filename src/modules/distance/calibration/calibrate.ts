@@ -55,6 +55,8 @@ export interface CameraModel {
   cameraDistanceM: number;
   /** Whether cameraDistanceM was measured (ball anchor) or assumed. */
   cameraDistanceSource: 'ball-anchor' | 'assumed';
+  /** User-reported camera height above the ground, m (receding-ball rung). */
+  cameraHeightM?: number;
   /** Image px -> world ground-plane yards, when reference points given. */
   homography?: HomographyResult;
   /**
@@ -141,6 +143,7 @@ export function buildCalibration(
     ballAnchorMetersPerPixel,
     cameraDistanceM,
     cameraDistanceSource,
+    cameraHeightM: input.cameraHeightM,
     homography,
     club: input.club,
     cameraAngle: input.cameraAngle,
