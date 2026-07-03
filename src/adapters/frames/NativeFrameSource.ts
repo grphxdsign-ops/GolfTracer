@@ -1,23 +1,16 @@
 /**
- * NativeFrameSource — placeholder FrameSource for real devices.
+ * NativeFrameSource — FrameSource backed by the "GolfTracerFrameDecoder"
+ * NativeModule (classic bridge, identical contract on iOS and Android).
  *
- * The real implementation decodes grayscale frames from the video file on
- * the native side:
+ * Frames are pulled in small batches through a native decode session
+ * (openSession → nextFrames → closeSession) so a long 240fps clip never
+ * lives in memory at once. Native yields upright, downscaled grayscale
+ * frames with raw media-timeline timestamps; slow-motion fps remapping
+ * stays in JS (VideoAsset.fps/recordedFps).
  *
- * - **Live capture** — a react-native-vision-camera frame processor (Worklets
- *   runtime) receives YUV frames; the Y plane is already the luma buffer this
- *   interface promises, so it is copied (optionally downscaled to
- *   `targetWidth`) into a `VideoFrame` per sample.
- * - **iOS files** — `AVAssetImageGenerator` (or `AVAssetReader` for
- *   sequential decode) yields CVPixelBuffers at requested timestamps; the
- *   luma plane of a kCVPixelFormatType_420YpCbCr8 buffer maps 1:1 onto
- *   `VideoFrame.luma`.
- * - **Android files** — `MediaCodec` + `MediaExtractor` decode into
- *   YUV_420_888 Images; plane 0 (Y) is copied out row by row honouring
- *   rowStride.
- *
- * All of that requires a device runtime, so in this Linux-verifiable
- * codebase every method rejects. Tests and demos use SyntheticFrameSource.
+ * Outside a device runtime (Jest, dev sandboxes) the module is not
+ * registered and every method rejects, matching the historical stub;
+ * tests inject a fake module through the constructor instead.
  */
 import type {
   FrameRange,
@@ -25,22 +18,89 @@ import type {
   VideoAsset,
   VideoFrame,
 } from '../../types/media';
+import { decodeBase64 } from './base64';
+import {
+  getFrameDecoder,
+  type FrameDecoderNativeModule,
+  type NativeFrame,
+  type NativeOpenOptions,
+} from './FrameDecoderNativeModule';
 
 export const NATIVE_FRAME_SOURCE_ERROR =
   'NativeFrameSource requires device runtime';
 
-export class NativeFrameSource implements FrameSource {
-  constructor(readonly asset: VideoAsset) {}
+const BATCH_SIZE = 6;
 
-  frames(_range?: FrameRange): AsyncIterable<VideoFrame> {
-    return {
-      [Symbol.asyncIterator]: () => ({
-        next: () => Promise.reject(new Error(NATIVE_FRAME_SOURCE_ERROR)),
-      }),
-    };
+const toVideoFrame = (frame: NativeFrame): VideoFrame => ({
+  index: frame.index,
+  timestampMs: frame.timestampMs,
+  width: frame.width,
+  height: frame.height,
+  luma: decodeBase64(frame.lumaBase64),
+});
+
+export class NativeFrameSource implements FrameSource {
+  private readonly module: FrameDecoderNativeModule | null;
+
+  constructor(
+    readonly asset: VideoAsset,
+    module: FrameDecoderNativeModule | null = getFrameDecoder(),
+  ) {
+    this.module = module;
   }
 
-  frameAt(_timestampMs: number, _targetWidth?: number): Promise<VideoFrame> {
-    return Promise.reject(new Error(NATIVE_FRAME_SOURCE_ERROR));
+  frames(range?: FrameRange): AsyncIterable<VideoFrame> {
+    const { module, asset } = this;
+    if (module === null) {
+      return {
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.reject(new Error(NATIVE_FRAME_SOURCE_ERROR)),
+        }),
+      };
+    }
+    return (async function* () {
+      const options: NativeOpenOptions = { fps: asset.fps };
+      if (range?.startMs !== undefined) {
+        options.startMs = range.startMs;
+      }
+      if (range?.endMs !== undefined) {
+        options.endMs = range.endMs;
+      }
+      if (range?.stride !== undefined) {
+        options.stride = range.stride;
+      }
+      if (range?.targetWidth !== undefined) {
+        options.targetWidth = range.targetWidth;
+      }
+      const { sessionId } = await module.openSession(asset.uri, options);
+      try {
+        for (;;) {
+          const batch = await module.nextFrames(sessionId, BATCH_SIZE);
+          for (const frame of batch.frames) {
+            yield toVideoFrame(frame);
+          }
+          if (batch.done) {
+            return;
+          }
+        }
+      } finally {
+        // Also runs on early break/return/throw from the consumer, giving
+        // cancellation; close errors are irrelevant at this point.
+        await module.closeSession(sessionId).catch(() => undefined);
+      }
+    })();
+  }
+
+  async frameAt(timestampMs: number, targetWidth?: number): Promise<VideoFrame> {
+    if (this.module === null) {
+      throw new Error(NATIVE_FRAME_SOURCE_ERROR);
+    }
+    const frame = await this.module.frameAt(
+      this.asset.uri,
+      timestampMs,
+      targetWidth ?? 0,
+      this.asset.fps,
+    );
+    return toVideoFrame(frame);
   }
 }
