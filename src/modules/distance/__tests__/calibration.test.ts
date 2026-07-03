@@ -261,4 +261,32 @@ describe('buildCalibration ladder', () => {
       12,
     );
   });
+
+  it('timeScale is 1 for normal video (recordedFps absent or equal)', () => {
+    expect(buildCalibration(base, VIDEO_META).timeScale).toBe(1);
+    expect(
+      buildCalibration(base, { ...VIDEO_META, recordedFps: VIDEO_META.fps })
+        .timeScale,
+    ).toBe(1);
+  });
+
+  it('timeScale is fps/recordedFps for slow-motion clips', () => {
+    const model = buildCalibration(base, {
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      recordedFps: 240,
+    });
+    expect(model.timeScale).toBeCloseTo(0.125, 12);
+  });
+
+  it('timeScale falls back to 1 on nonsensical fps metadata', () => {
+    const model = buildCalibration(base, {
+      width: 1920,
+      height: 1080,
+      fps: 0,
+      recordedFps: 240,
+    });
+    expect(model.timeScale).toBe(1);
+  });
 });

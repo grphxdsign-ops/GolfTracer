@@ -95,6 +95,9 @@ export function ResultsScreen() {
       width: video?.width ?? track.frameWidth,
       height: video?.height ?? track.frameHeight,
       fps: video?.fps ?? 30,
+      // Slow-motion clips store media time dilated by fps/recordedFps; the
+      // estimator needs recordedFps to fit physics against real time.
+      recordedFps: video?.recordedFps,
     });
   }, [trackingResult, calibration, video]);
 

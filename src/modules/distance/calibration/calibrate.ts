@@ -35,7 +35,13 @@ export const DEFAULT_CAMERA_DISTANCE_M = 10;
 export interface VideoMeta {
   width: number;
   height: number;
+  /** Container playback fps. */
   fps: number;
+  /**
+   * Sensor capture fps for slow-motion clips (e.g. 240 for a 240fps clip in
+   * a 30fps container). Omit or set equal to fps for normal video.
+   */
+  recordedFps?: number;
 }
 
 export interface CameraModel {
@@ -51,6 +57,13 @@ export interface CameraModel {
   cameraDistanceSource: 'ball-anchor' | 'assumed';
   /** Image px -> world ground-plane yards, when reference points given. */
   homography?: HomographyResult;
+  /**
+   * Real seconds per media second (mirrors capture's slowMotionFactor):
+   * fps / recordedFps — 1 for normal video, 0.125 for 240fps-in-30fps
+   * slow-mo. Physics fitting must multiply media-time deltas by this before
+   * treating them as real-world seconds.
+   */
+  timeScale: number;
   club: ClubType;
   cameraAngle: CameraAngle;
 }
@@ -112,9 +125,17 @@ export function buildCalibration(
     }
   }
 
+  // Slow-motion time base: recordedFps > fps means each media second holds
+  // recordedFps/fps seconds' worth of frames, i.e. media time runs slower
+  // than real time by fps/recordedFps.
+  const recordedFps = videoMeta.recordedFps ?? videoMeta.fps;
+  const timeScale =
+    videoMeta.fps > 0 && recordedFps > 0 ? videoMeta.fps / recordedFps : 1;
+
   return {
     imageWidth: videoMeta.width,
     imageHeight: videoMeta.height,
+    timeScale,
     focalLengthPx,
     focalSource,
     ballAnchorMetersPerPixel,

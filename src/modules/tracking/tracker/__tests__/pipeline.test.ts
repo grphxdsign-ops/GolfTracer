@@ -84,6 +84,57 @@ describe('runTracking (full pipeline on a synthetic 60-frame flight)', () => {
   });
 });
 
+describe('runTracking coordinate space (native > analysis resolution)', () => {
+  // Default flight geometry scaled 2x to 960x540: frames get downsampled to
+  // the 480px analysis width, but the emitted track must be in native pixels.
+  const flight = makeFlight({
+    width: 960,
+    height: 540,
+    launch: { x: 260, y: 450 },
+    velocity: { vx: 11, vy: 26.4 },
+    gravity: 0.92,
+    radius: 10,
+    seed: 7,
+  });
+
+  it('rescales the track and observations back to native pixels', async () => {
+    const { track, tracer } = await runTracking(makeFrameSource(flight.frames));
+    expect(track.frameWidth).toBe(960);
+    expect(track.frameHeight).toBe(540);
+    expect(track.quality).toBe('high');
+
+    // >=90% of native-space truth positions recovered within 6 native px
+    // (3 analysis px). If the track were left in analysis pixels this would
+    // be off by a factor of 2 everywhere.
+    const byTs = new Map(
+      track.smoothedPath.map((p) => [Math.round(p.timestampMs), p]),
+    );
+    let recovered = 0;
+    for (const truth of flight.truth) {
+      const p = byTs.get(Math.round(truth.timestampMs));
+      if (p && Math.hypot(p.x - truth.x, p.y - truth.y) <= 6) {
+        recovered++;
+      }
+    }
+    expect(recovered / flight.truth.length).toBeGreaterThanOrEqual(0.9);
+
+    // Observations share the same native space as the smoothed path.
+    for (const o of track.observations) {
+      expect(o.cx).toBeGreaterThanOrEqual(0);
+      expect(o.cx).toBeLessThanOrEqual(960);
+      expect(o.cy).toBeLessThanOrEqual(540);
+    }
+    const maxObsX = Math.max(...track.observations.map((o) => o.cx));
+    expect(maxObsX).toBeGreaterThan(480); // ball flies past analysis width
+
+    // Tracer (already native) stays consistent with the track.
+    const lastTracer = tracer.points[tracer.points.length - 1]!;
+    const lastTrack = track.smoothedPath[track.smoothedPath.length - 1]!;
+    expect(lastTracer.x).toBeCloseTo(lastTrack.x, 6);
+    expect(lastTracer.y).toBeCloseTo(lastTrack.y, 6);
+  });
+});
+
 describe('runTracking failure paths', () => {
   it('grades a track lost right after impact as failed', async () => {
     // Ball visible for only 8 flight steps, then gone for good.

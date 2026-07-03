@@ -59,7 +59,14 @@ interface SyntheticTrackOptions {
   /** Meters per pixel at the ball plane (must match the CameraModel). */
   metersPerPixel: number;
   originPx: { x: number; y: number };
+  /** Real-world sampling rate of the flight (recordedFps for slow-mo). */
   fps: number;
+  /**
+   * Container fps used for the media timestamps. Defaults to `fps` (normal
+   * video). For slow-mo, timestamps advance at 1000/mediaFps per frame while
+   * the physics still advances 1/fps real seconds per frame.
+   */
+  mediaFps?: number;
   numPoints: number;
   noisePx: number;
   quality?: TrackQuality;
@@ -72,12 +79,13 @@ function makeSyntheticTrack(opts: SyntheticTrackOptions): BallTrack {
   const noise = () => (rng() * 2 - 1) * opts.noisePx;
   const impactTimestampMs = 1000;
 
+  const mediaFps = opts.mediaFps ?? opts.fps;
   const smoothedPath: TrackPoint[] = [];
   for (let i = 0; i < opts.numPoints; i++) {
     const t = i / opts.fps;
     const sim = trajectoryAt(flight.trajectory, t);
     smoothedPath.push({
-      timestampMs: impactTimestampMs + (i * 1000) / opts.fps,
+      timestampMs: impactTimestampMs + (i * 1000) / mediaFps,
       x: opts.originPx.x + sim.x / opts.metersPerPixel + noise(),
       y: opts.originPx.y - sim.y / opts.metersPerPixel + noise(),
       interpolated: false,
@@ -180,6 +188,46 @@ describe('fitLaunchFromTrack', () => {
         Math.abs(fit.launch.launchAngleDeg - trueLaunch.launchAngleDeg),
       ).toBeLessThan(1.5);
       expect(fit.pixelRms).toBeLessThan(fit.rmsThreshold);
+    },
+    30000,
+  );
+
+  it(
+    'recovers launch from a slow-motion clip (240fps in a 30fps container)',
+    () => {
+      const trueLaunch: LaunchConditions = {
+        ballSpeedMph: 115,
+        launchAngleDeg: 18.5,
+        backspinRpm: 6500,
+      };
+      // Media timestamps advance 8x slower than real time; without the
+      // timeScale correction the fit would see an 8x-dilated time base and
+      // grossly underestimate ball speed.
+      const slowmoMeta = { ...FRAME, fps: 30, recordedFps: 240 };
+      const model = buildCalibration(
+        { club: '7-iron', cameraAngle: 'face-on', ballRadiusAtAddressPx: 4 },
+        slowmoMeta,
+      );
+      expect(model.timeScale).toBeCloseTo(0.125, 12);
+      const track = makeSyntheticTrack({
+        launch: trueLaunch,
+        metersPerPixel: metersPerPixelAt(model),
+        originPx: { x: 200, y: 900 },
+        fps: 240, // real-world sampling rate (recordedFps)
+        mediaFps: 30, // container time base for the timestamps
+        numPoints: 40,
+        noisePx: 1,
+      });
+
+      const fit = fitLaunchFromTrack(track, model, '7-iron');
+      expect(fit.converged).toBe(true);
+      expect(
+        Math.abs(fit.launch.ballSpeedMph - trueLaunch.ballSpeedMph) /
+          trueLaunch.ballSpeedMph,
+      ).toBeLessThan(0.05);
+      expect(
+        Math.abs(fit.launch.launchAngleDeg - trueLaunch.launchAngleDeg),
+      ).toBeLessThan(1.5);
     },
     30000,
   );

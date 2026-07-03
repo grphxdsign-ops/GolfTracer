@@ -158,21 +158,44 @@ export async function runTracking(
     interpolated: p.interpolated,
   }));
 
+  // 6. Rescale from analysis pixels back to native video pixels so the track
+  //    shares one coordinate space with everything downstream: calibration
+  //    reference points are tapped in native pixels and distance estimation
+  //    builds its camera model from native video metadata, so handing it an
+  //    analysis-resolution track would skew every measurement by the
+  //    downsample factor.
+  const nativeWidth = asset.width > 0 ? asset.width : width;
+  const nativeHeight = asset.height > 0 ? asset.height : height;
+  const sx = width > 0 ? nativeWidth / width : 1;
+  const sy = height > 0 ? nativeHeight / height : 1;
+  const observations = tracker.observations.map((o) => ({
+    ...o,
+    cx: o.cx * sx,
+    cy: o.cy * sy,
+    radiusPx: (o.radiusPx * (sx + sy)) / 2,
+  }));
+  const nativePath: TrackPoint[] = smoothedPath.map((p) => ({
+    ...p,
+    x: p.x * sx,
+    y: p.y * sy,
+  }));
+
   const track: BallTrack = {
-    observations: tracker.observations,
-    smoothedPath,
+    observations,
+    smoothedPath: nativePath,
     impactFrameIndex: frames[impactIndex]!.index,
     impactTimestampMs: frames[impactIndex]!.timestampMs,
-    apexPointIndex: argMinY(smoothedPath),
+    apexPointIndex: argMinY(nativePath),
     landingPointIndex: tracker.landingPointIndex,
-    frameWidth: width,
-    frameHeight: height,
+    frameWidth: nativeWidth,
+    frameHeight: nativeHeight,
     quality,
   };
 
+  // The track is already native; buildTracerPath's scale factor is 1 here.
   const tracer = buildTracerPath(track, options.style, {
-    width: asset.width,
-    height: asset.height,
+    width: nativeWidth,
+    height: nativeHeight,
   });
 
   onProgress(1);

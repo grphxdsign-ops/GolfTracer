@@ -90,13 +90,19 @@ function trajectoryAt(traj: TrajectoryPoint[], t: number): { x: number; y: numbe
 }
 
 interface FitSample {
-  /** Time since the first used track point, s. */
+  /** Real-world time since the first used track point, s. */
   t: number;
   x: number;
   y: number;
 }
 
-function collectSamples(track: BallTrack): FitSample[] {
+/**
+ * Track timestamps are media time; the physics simulator runs in real time.
+ * `timeScale` (CameraModel.timeScale = fps / recordedFps) converts media
+ * seconds to real seconds so slow-motion clips fit against the true time
+ * base instead of one dilated by the frame-rate ratio.
+ */
+function collectSamples(track: BallTrack, timeScale: number): FitSample[] {
   const pts: TrackPoint[] = track.smoothedPath.filter(
     (p) => p.timestampMs >= track.impactTimestampMs,
   );
@@ -104,9 +110,10 @@ function collectSamples(track: BallTrack): FitSample[] {
   if (used.length === 0) {
     return [];
   }
+  const scale = timeScale > 0 && Number.isFinite(timeScale) ? timeScale : 1;
   const t0 = used[0]!.timestampMs;
   return used.map((p) => ({
-    t: (p.timestampMs - t0) / 1000,
+    t: ((p.timestampMs - t0) / 1000) * scale,
     x: p.x,
     y: p.y,
   }));
@@ -128,7 +135,7 @@ export function fitLaunchFromTrack(
     backspinRpm: prior.spinRpm.mean,
   };
 
-  const samples = collectSamples(track);
+  const samples = collectSamples(track, model.timeScale);
   const rmsThreshold = Math.min(
     Math.max(0.005 * Math.hypot(track.frameWidth, track.frameHeight), 3),
     12,
