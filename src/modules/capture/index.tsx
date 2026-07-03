@@ -1,32 +1,19 @@
 /**
- * Capture module — OWNED by the capture-media-pipeline workstream after
- * scaffold. It rewrites this file (and only this shared touchpoint) to
- * register real Record / Import / Review screens.
+ * Capture module — OWNED by the capture-media-pipeline workstream.
  *
- * Contract: registers exactly the fixed routes 'Record', 'Import', 'Review';
- * publishes via useSessionStore().setVideo(asset, frameSource).
+ * Registers the fixed routes 'Record', 'Import', 'Review'; publishes the
+ * confirmed clip via useSessionStore().setVideo(asset, frameSource).
  */
-import { Text, View } from 'react-native';
-
 import type { AppModule } from '../../types/modules';
-import { sharedStyles, typography } from '../../app/theme';
-
-const placeholder = (label: string) => {
-  const Placeholder = () => (
-    <View style={sharedStyles.centered}>
-      <Text style={typography.title}>{label}</Text>
-      <Text style={typography.subtitle}>Coming soon</Text>
-    </View>
-  );
-  Placeholder.displayName = `CapturePlaceholder(${label})`;
-  return Placeholder;
-};
+import { RecordScreen } from './screens/RecordScreen';
+import { ImportScreen } from './screens/ImportScreen';
+import { ReviewScreen } from './screens/ReviewScreen';
 
 export const captureModule: AppModule = {
   name: 'capture',
   screens: [
-    { route: 'Record', component: placeholder('Record'), title: 'Record Swing' },
-    { route: 'Import', component: placeholder('Import'), title: 'Import Video' },
-    { route: 'Review', component: placeholder('Review'), title: 'Review Clip' },
+    { route: 'Record', component: RecordScreen, title: 'Record Swing' },
+    { route: 'Import', component: ImportScreen, title: 'Import Video' },
+    { route: 'Review', component: ReviewScreen, title: 'Review Clip' },
   ],
 };
