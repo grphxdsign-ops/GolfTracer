@@ -1,4 +1,4 @@
-package com.helloworld
+package com.golftracerai
 
 import android.app.Application
 import com.facebook.react.PackageList
