@@ -22,7 +22,9 @@ import {
   type DetectorKind,
 } from '../../../adapters/detector';
 import { downsample, type Roi } from '../vision/imageOps';
+import { detectorDefaultsForFps } from '../vision/classicalDetector';
 import { findImpactFrame } from '../vision/impactDetector';
+import { deriveRoisFromBallPoint } from './roiPlanner';
 import { BallTracker, type BallTrackState, type TrackerOptions } from './tracker';
 import { buildTracerPath, catmullRomSample } from './tracerGeometry';
 
@@ -31,6 +33,23 @@ export interface RunTrackingOptions {
   targetWidth?: number;
   /** Launch ROI in analysis coordinates. Default: lower-center band. */
   launchRoi?: Roi;
+  /**
+   * Tight box around the tee, in analysis coordinates, where the strike
+   * energy lives (impact detection). Defaults to the ballPoint-derived box,
+   * then launchRoi, then the lower-center band.
+   */
+  impactRoi?: Roi;
+  /**
+   * Corridor above the tee, in analysis coordinates, where the tracker looks
+   * for the first post-impact detection. Same fallback chain as impactRoi.
+   */
+  seedRoi?: Roi;
+  /**
+   * One user tap on the ball, in NATIVE video pixels (the space users tap
+   * and BallTrack emits). Scaled into analysis pixels and expanded into
+   * impact/seed ROIs via deriveRoisFromBallPoint.
+   */
+  ballPoint?: { x: number; y: number };
   /** Inject a detector (tests); overrides detectorKind. */
   detector?: BallDetector;
   detectorKind?: DetectorKind;
@@ -99,31 +118,66 @@ export async function runTracking(
 
   const width = frames[0]!.width;
   const height = frames[0]!.height;
-  const launchRoi: Roi = options.launchRoi ?? {
+
+  // Native-vs-analysis scale factors, needed both to scale the ballPoint tap
+  // (native px) down into analysis space here and to scale the finished track
+  // back up to native pixels in step 6.
+  const nativeWidth = asset.width > 0 ? asset.width : width;
+  const nativeHeight = asset.height > 0 ? asset.height : height;
+
+  // ROI resolution. Impact detection and tracker seeding are different jobs
+  // (field evidence: strike energy is at the tee, but the tee area is full of
+  // clubhead/tee/shadow clutter right after impact), so they get separate
+  // boxes: explicit option ?? derived from the user's ballPoint tap ??
+  // launchRoi ?? the historical lower-center band. With zero options this
+  // reproduces the single-launchRoi behavior exactly.
+  const derived = options.ballPoint
+    ? deriveRoisFromBallPoint(
+        {
+          x: options.ballPoint.x * (width / nativeWidth),
+          y: options.ballPoint.y * (height / nativeHeight),
+        },
+        { width, height },
+      )
+    : undefined;
+  const defaultBand: Roi = {
     x: Math.round(0.28 * width),
     y: Math.round(0.5 * height),
     w: Math.round(0.44 * width),
     h: Math.round(0.46 * height),
   };
+  const impactRoi: Roi =
+    options.impactRoi ?? derived?.impactRoi ?? options.launchRoi ?? defaultBand;
+  const seedRoi: Roi =
+    options.seedRoi ?? derived?.seedRoi ?? options.launchRoi ?? defaultBand;
 
-  // 2. Impact detection via motion energy in the launch ROI.
-  const impact = findImpactFrame(frames, launchRoi);
+  // 2. Impact detection via motion energy in the impact (tee) ROI.
+  const impact = findImpactFrame(frames, impactRoi);
   const impactIndex = Math.min(impact.frameIndex, frames.length - 2);
   onProgress(0.4);
 
   // 3. Detector: warm the background model with the frames just before
   //    impact so the static scene (ball on tee) is baked into the median.
+  //    Defaults are fps-aware (static background at ≤60 fps capture) and
+  //    caller options win key-by-key.
+  const detectorOptions: ClassicalDetectorOptions = {
+    ...detectorDefaultsForFps(asset.recordedFps ?? asset.fps),
+    ...options.detectorOptions,
+  };
   const detector =
     options.detector ??
-    createDetector(options.detectorKind ?? 'classical', options.detectorOptions);
+    createDetector(options.detectorKind ?? 'classical', detectorOptions);
   const warmStart = Math.max(0, impactIndex - 6);
   for (let i = warmStart; i < impactIndex; i++) {
     await detector.detect(frames[i]!);
   }
 
-  // 4. Track from impact forward. Progress 0.4 → 0.92.
+  // 4. Track from impact forward. Progress 0.4 → 0.92. launchRoi keeps
+  //    anchoring landing height near the tee; seedRoi gates the first
+  //    detection.
   const tracker = new BallTracker(detector, {
-    launchRoi,
+    launchRoi: impactRoi,
+    seedRoi,
     ...options.tracker,
   });
   const span = Math.max(1, frames.length - impactIndex);
@@ -164,8 +218,6 @@ export async function runTracking(
   //    builds its camera model from native video metadata, so handing it an
   //    analysis-resolution track would skew every measurement by the
   //    downsample factor.
-  const nativeWidth = asset.width > 0 ? asset.width : width;
-  const nativeHeight = asset.height > 0 ? asset.height : height;
   const sx = width > 0 ? nativeWidth / width : 1;
   const sy = height > 0 ? nativeHeight / height : 1;
   const observations = tracker.observations.map((o) => ({
