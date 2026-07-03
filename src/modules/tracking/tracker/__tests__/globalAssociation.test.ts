@@ -39,7 +39,6 @@ function obs(
 function scripted(byFrame: Record<number, BallObservation[]>): BallDetector {
   return {
     detect: async (f: VideoFrame) => byFrame[f.index] ?? [],
-    reset: () => {},
   };
 }
 
