@@ -2,7 +2,9 @@
  * BallTracker — Kalman-gated single-target tracker.
  *
  * The core trick (arXiv 2012.09393): never run the detector on the whole
- * frame. After seeding near the launch ROI, each frame is processed as
+ * frame. After seeding in the seed ROI (defaults to the launch ROI — callers
+ * with a clutter-heavy tee area pass a corridor above it), each frame is
+ * processed as
  * predict → search only a small ROI around the predicted position (sized by
  * the innovation covariance) → associate the nearest Mahalanobis-gated
  * candidate → update, or coast on the prediction for up to `maxMisses`
@@ -31,6 +33,8 @@ export type BallTrackState =
 export interface TrackerOptions {
   /** Where the ball launches from, in analysis-frame pixels. */
   launchRoi: Roi;
+  /** Where to look for the first post-impact detection; defaults to launchRoi. */
+  seedRoi?: Roi;
   /** χ² gate (2 dof) for Mahalanobis association. 9.21 = 99%. */
   gateChi2?: number;
   /** Consecutive missed frames tolerated before the track is lost. */
@@ -56,7 +60,7 @@ export class BallTracker {
   landingPointIndex: number | undefined;
 
   private readonly detector: BallDetector;
-  private readonly launchRoi: Roi;
+  private readonly seedRoi: Roi;
   private readonly gateChi2: number;
   private readonly maxMisses: number;
   private readonly confirmHits: number;
@@ -77,7 +81,7 @@ export class BallTracker {
 
   constructor(detector: BallDetector, options: TrackerOptions) {
     this.detector = detector;
-    this.launchRoi = options.launchRoi;
+    this.seedRoi = options.seedRoi ?? options.launchRoi;
     this.gateChi2 = options.gateChi2 ?? 9.21;
     this.maxMisses = options.maxMisses ?? 8;
     this.confirmHits = options.confirmHits ?? 3;
@@ -169,7 +173,7 @@ export class BallTracker {
   }
 
   private async trySeed(frame: VideoFrame): Promise<void> {
-    const roi = clampRoi(this.launchRoi, frame.width, frame.height);
+    const roi = clampRoi(this.seedRoi, frame.width, frame.height);
     const candidates = await this.detector.detect(frame, roi);
     let best: BallObservation | null = null;
     for (const c of candidates) {

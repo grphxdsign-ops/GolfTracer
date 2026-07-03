@@ -218,6 +218,113 @@ export function makeFlight(
   return { frames, truth, impactIndex: spec.preImpactFrames, spec };
 }
 
+export interface RecedingFlightSpec {
+  width: number;
+  height: number;
+  fps: number;
+  /** Static frames before the ball starts moving. */
+  preImpactFrames: number;
+  /** Frames of ball flight after impact. */
+  flightFrames: number;
+  /** Ball position at rest (on the tee). */
+  start: { x: number; y: number };
+  /** Point the ball recedes toward (sets the direction of travel). */
+  towards: { x: number; y: number };
+  /** Displacement on the first flight frame, in px. */
+  initialStepPx: number;
+  /** Per-frame multiplicative decay of the displacement (receding ball). */
+  stepDecay: number;
+  /**
+   * Floor on the per-frame displacement: once the geometric decay reaches
+   * this, the ball keeps drifting at this constant rate (the image-space
+   * asymptote of a ball receding toward the vanishing point). Default 0.
+   */
+  terminalStepPx?: number;
+  /** Apparent radius shrinks linearly from startRadius to endRadius. */
+  startRadius: number;
+  endRadius: number;
+  /**
+   * Flight frames over which the radius shrinks; it holds at endRadius
+   * afterwards. Defaults to flightFrames.
+   */
+  shrinkFrames?: number;
+  ballLuma: number;
+  noiseAmp: number;
+  seed: number;
+}
+
+/**
+ * Ball center at receding-flight step t (t=0 is the ball still on the tee):
+ * cumulative displacement is the geometric series initialStepPx·(1 + decay +
+ * decay² + …), so image motion decays like a ball receding from the camera.
+ */
+export function recedingPosition(
+  spec: RecedingFlightSpec,
+  t: number,
+): { x: number; y: number } {
+  const dx = spec.towards.x - spec.start.x;
+  const dy = spec.towards.y - spec.start.y;
+  const norm = Math.hypot(dx, dy) || 1;
+  const floor = spec.terminalStepPx ?? 0;
+  let cumulative = 0;
+  for (let k = 1; k <= t; k++) {
+    cumulative += Math.max(
+      spec.initialStepPx * Math.pow(spec.stepDecay, k - 1),
+      floor,
+    );
+  }
+  return {
+    x: spec.start.x + (dx / norm) * cumulative,
+    y: spec.start.y + (dy / norm) * cumulative,
+  };
+}
+
+/**
+ * Down-the-line geometry (field evidence #3): the ball rises toward a point
+ * below the vanishing point with per-frame image displacement decaying
+ * geometrically and the disc shrinking as it recedes. Deliberately shares the
+ * SyntheticFlight output shape so tests can reuse the same plumbing.
+ */
+export function makeRecedingFlight(spec: RecedingFlightSpec): {
+  frames: VideoFrame[];
+  truth: TruthPoint[];
+  impactIndex: number;
+} {
+  const rng = mulberry32(spec.seed);
+  const frameMs = 1000 / spec.fps;
+  const frames: VideoFrame[] = [];
+  const truth: TruthPoint[] = [];
+  const total = spec.preImpactFrames + spec.flightFrames;
+
+  for (let i = 0; i < total; i++) {
+    const timestampMs = i * frameMs;
+    const t = i < spec.preImpactFrames ? 0 : i - spec.preImpactFrames + 1;
+    const pos = recedingPosition(spec, t);
+    const shrinkFrames = spec.shrinkFrames ?? spec.flightFrames;
+    const shrink = Math.min(1, shrinkFrames > 1 ? t / shrinkFrames : 1);
+    const radius =
+      t === 0
+        ? spec.startRadius
+        : spec.startRadius + (spec.endRadius - spec.startRadius) * shrink;
+    frames.push(
+      renderFrame({
+        index: i,
+        timestampMs,
+        width: spec.width,
+        height: spec.height,
+        discs: [{ cx: pos.x, cy: pos.y, r: radius, luma: spec.ballLuma }],
+        noiseAmp: spec.noiseAmp,
+        rng,
+      }),
+    );
+    if (t > 0) {
+      truth.push({ frameIndex: i, timestampMs, x: pos.x, y: pos.y });
+    }
+  }
+
+  return { frames, truth, impactIndex: spec.preImpactFrames };
+}
+
 /** Wrap pre-rendered frames in the FrameSource contract. */
 export function makeFrameSource(
   frames: VideoFrame[],
