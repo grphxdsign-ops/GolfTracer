@@ -13,9 +13,37 @@
  *
  * Multi-start Nelder–Mead (12 starts spanning speed, azimuth, and spin at
  * the club prior's ±σ) provides both the optimizer and the degeneracy
- * detector: the carry spread of the near-optimal ensemble. Declines are
- * honest (`converged: false` + reason) and never throw — the ladder falls
- * through to the club prior.
+ * detector: the carry spread of the near-optimal ensemble, trusted only
+ * when at least DTL_MIN_ENSEMBLE_FOR_SPREAD starts land in the same basin
+ * (a near-singleton ensemble means the landscape is multi-modal and the
+ * spread is unknown, so it scores worst, not best).
+ *
+ * Ensemble spread alone is structurally blind to PRIOR DOMINATION: when the
+ * data only weakly observes depth/speed, the club prior pulls the fitted
+ * speed toward its mean while pixel residuals stay tiny, and every start
+ * collapses into the same prior-biased basin (small spread, small RMS —
+ * both scores look great while the carry is systematically shrunk toward
+ * the club average). The prior must bend the fit, not clamp it, so an
+ * orthogonal speed-observability probe interrogates the DATA directly: fix
+ * the fitted speed at v* ± 1σ_prior, re-optimize every other parameter on
+ * the speed-prior-free objective (only the term under test is removed;
+ * α/spin and camera-geometry priors stay), and measure the residual cost.
+ * If the image evidence can absorb a full prior σ of speed at negligible
+ * pixel cost, the data underdetermines speed and the club prior — not the
+ * measurement — selected the carry. Combined with the fitted-vs-prior
+ * speed shrinkage this drives two responses: an unobserved fit parked at
+ * the prior's speed mean is a pure prior restatement and DECLINES
+ * ('prior-dominated'); an unobserved fit the data dragged away from the
+ * mean carries real (if shrunk) signal and survives with its confidence
+ * heavily penalized via score_prior = 0. (Perturbing the prior itself —
+ * scaling λ or shifting its mean — is NOT sufficient: a re-fit started
+ * from the converged optimum reads zero when the prior selected among
+ * locally-tight basins, exactly the dominated regime it must detect;
+ * forcibly displacing v and letting the data push back measures
+ * identifiability itself.)
+ *
+ * Declines are honest (`converged: false` + reason) and never throw — the
+ * ladder falls through to the club prior.
  */
 import type { BallTrack, ClubType, TrackQuality } from '../../../types';
 
@@ -49,6 +77,7 @@ export type DtlDeclineReason =
   | 'too-few-points'
   | 'poor-fit'
   | 'degenerate'
+  | 'prior-dominated'
   | 'implausible';
 
 export interface DtlFitOptions {
@@ -81,6 +110,16 @@ export interface DtlFitResult {
   carryYards: number;
   /** Max − min carry over the near-optimal ensemble, yd. */
   carrySpreadYards: number;
+  /**
+   * Prior-domination / speed-observability signal, orthogonal to ensemble
+   * spread: the speed-prior-free objective cost (≈ px of residual RMS) of
+   * pinning the fitted speed at v* ± 1σ_prior with every other parameter
+   * re-optimized (min over the two directions, floored at 0). ≈ 0 means
+   * the evidence cannot tell speeds a prior σ apart — the club prior, not
+   * the data, set the fitted speed. Declines that never ran the probe
+   * report 0 (unknown scores as worst, never as perfect).
+   */
+  speedObsCostPx: number;
   /** Number of starts within the ensemble objective window. */
   ensembleSize: number;
   /** Number of multi-start optimizations run. */
@@ -107,6 +146,54 @@ const HFOV_LAMBDA = 0.5;
 const HUBER_DELTA_PX = 4;
 /** Objective window (in J units) admitting a start into the ensemble. */
 const ENSEMBLE_J_WINDOW = 1.0;
+/**
+ * Minimum near-optimal ensemble size required before the carry spread is
+ * trusted as a degeneracy signal. A 1–2 member ensemble makes max−min
+ * spread (near-)trivially 0 — with 12 diverse starts, a tiny ensemble means
+ * the OTHER starts converged to different, worse basins (a multi-modal /
+ * rough objective landscape), not that the fit is well-conditioned. Below
+ * this size the spread is treated as UNKNOWN: the spread score is floored
+ * to 0 instead of credited as perfect. Shared with estimateDistance's
+ * pinned confidence formula.
+ */
+export const DTL_MIN_ENSEMBLE_FOR_SPREAD = 3;
+/**
+ * Speed displacement (in prior σ of ball speed) for the prior-domination /
+ * speed-observability probe: the fitted speed is pinned at v* ± this many
+ * σ and every other parameter is re-optimized on the data-only objective.
+ */
+const PRIOR_PROBE_SHIFT_SIGMA = 1;
+/**
+ * speedObsCostPx at (and above) which the data fully identifies the speed:
+ * absorbing a ±1σ speed displacement costs at least this much data-only
+ * objective (≈ pixel RMS units), so score_prior earns full credit. Between
+ * the decline floor and this value the credit is linear — partial
+ * domination is penalized, not ignored.
+ */
+export const DTL_SPEED_OBS_FULL_PX = 1.0;
+/**
+ * speedObsCostPx floor below which the speed is treated as UNOBSERVED:
+ * displacing the fitted speed a full prior σ costs the evidence
+ * essentially nothing (sub-noise residual wiggle). Unobserved speed alone
+ * is not fatal — the camera priors still bound the scale and the data may
+ * have dragged the fit well away from the club prior's mean (real, if
+ * shrunk, signal; surfaced with score_prior = 0 confidence penalty). It IS
+ * fatal in combination with PRIOR_PARK_SIGMA_MAX below. Multi-start spread
+ * CANNOT stand in for this signal: prior pull makes all starts agree on
+ * the same wrong basin.
+ */
+export const DTL_SPEED_OBS_MIN_PX = 0.25;
+/**
+ * Prior-domination decline gate, the fitted-vs-prior speed shrinkage arm:
+ * when the speed is unobserved (speedObsCostPx < DTL_SPEED_OBS_MIN_PX) AND
+ * the fitted speed sits within this many prior σ of the club prior's mean,
+ * the 'measurement' is a restatement of the club prior — the data neither
+ * identifies the speed nor moved it anywhere — and surfacing it as a
+ * 'physics-fit' would wear measurement confidence on prior information.
+ * Declining these costs no accuracy (the fallback prior carry ≈ the fitted
+ * carry) and restores honest confidence (≤ 0.3, method 'club-prior').
+ */
+const PRIOR_PARK_SIGMA_MAX = 0.5;
 
 /** Hard parameter bounds. */
 const SPEED_BOUNDS: [number, number] = [40, 220]; // mph
@@ -291,6 +378,7 @@ export function fitDtlLaunch(
     usedPoints: samples.length,
     carryYards: 0,
     carrySpreadYards: 0,
+    speedObsCostPx: 0,
     ensembleSize: 0,
     startsRun: 0,
     converged: false,
@@ -409,8 +497,13 @@ export function fitDtlLaunch(
     };
   };
 
+  // `speedPrior: false` drops ONLY the club prior's ball-speed term (the
+  // term whose domination the sensitivity probe tests) while keeping the
+  // launch-angle/spin priors and the camera-geometry priors, so parameter
+  // compensation during the probe stays realistically constrained. The
+  // production objective keeps everything.
   const objectiveFor =
-    (spinRpm: number) =>
+    (spinRpm: number, opts?: { speedPrior?: boolean }) =>
     (raw: number[]): number => {
       const p = paramsFromRaw(raw);
       // Quadratic penalty for straying outside the hard bounds.
@@ -426,19 +519,24 @@ export function fitDtlLaunch(
       if (stats.invalid) {
         return INVALID_J + oob * oob;
       }
+      const heightZ =
+        (geometryFor(p.thetaDeg, p.focalPx).cameraHeightM - HEIGHT_PRIOR_MEAN_M) /
+        HEIGHT_PRIOR_SD_M;
       const launch: LaunchConditions = {
         ballSpeedMph: p.vMph,
         launchAngleDeg: p.alphaDeg,
         backspinRpm: spinRpm,
       };
-      const heightZ =
-        (geometryFor(p.thetaDeg, p.focalPx).cameraHeightM - HEIGHT_PRIOR_MEAN_M) /
-        HEIGHT_PRIOR_SD_M;
       let j =
         stats.huberRms +
         PRIOR_LAMBDA * -logPrior(club, launch) +
         HEIGHT_LAMBDA * heightZ * heightZ +
         oob * oob;
+      if (opts?.speedPrior === false) {
+        // −logPrior is Σ z²/2; remove the speed component.
+        const zv = (p.vMph - prior.ballSpeedMph.mean) / prior.ballSpeedMph.sd;
+        j -= PRIOR_LAMBDA * 0.5 * zv * zv;
+      }
       if (fitFov) {
         const fovZ = (p.hfovDeg - HFOV_PRIOR_MEAN_DEG) / HFOV_PRIOR_SD_DEG;
         j += HFOV_LAMBDA * fovZ * fovZ;
@@ -533,6 +631,53 @@ export function fitDtlLaunch(
   ); // m
   const bestHeightM = geometryFor(best.thetaDeg, best.focalPx).cameraHeightM;
 
+  // --- Prior-domination / speed-observability probe ---------------------------
+  // Pin the fitted speed at v* ± 1σ_prior, re-optimize every other
+  // parameter on the speed-prior-free objective (only the term whose
+  // domination is being tested is removed; α/spin and camera priors stay,
+  // so compensation is realistically constrained), and take the cheaper
+  // direction's cost over the best fit's own speed-prior-free score. The
+  // baseline needs no re-fit: the probe objective differs from the
+  // production one by a function of v alone, so with v pinned at v* the
+  // best fit's remaining parameters are already optimal. Orthogonal to the
+  // ensemble spread by construction: when weakly observed depth lets the
+  // prior set the speed, ALL starts collapse into the same prior-biased
+  // basin (tiny spread, tiny RMS) — but the data then absorbs a full σ of
+  // displaced speed at ≈ zero pixel cost, which is exactly the signature
+  // of an unidentified speed. A negative cost (the fit actively prefers
+  // leaving once the speed prior lets go) floors to 0: dominated.
+  const probeObjective = objectiveFor(best.spinRpm, { speedPrior: false });
+  const bestRaw = [best.vMph, best.alphaDeg, best.psiDeg, best.thetaDeg];
+  if (fitFov) {
+    bestRaw.push(best.hfovDeg);
+  }
+  const baselineProbeJ = probeObjective(bestRaw);
+  const displacedCost = (dirSigma: number): number => {
+    const vPinned = clamp(
+      best.vMph + dirSigma * prior.ballSpeedMph.sd,
+      SPEED_BOUNDS,
+    ); // mph
+    const rest0 = bestRaw.slice(1);
+    const nm = nelderMead(
+      (rest: number[]) => probeObjective([vPinned, ...rest]),
+      rest0,
+      {
+        step: nmStep.slice(1),
+        maxIterations: 250,
+        fTolerance: 1e-3,
+        xTolerance: 1e-3,
+      },
+    );
+    return nm.fx - baselineProbeJ;
+  };
+  const speedObsCostPx = Math.max(
+    0,
+    Math.min(
+      displacedCost(PRIOR_PROBE_SHIFT_SIGMA),
+      displacedCost(-PRIOR_PROBE_SHIFT_SIGMA),
+    ),
+  );
+
   const base: DtlFitResult = {
     launch: {
       ballSpeedMph: best.vMph,
@@ -551,6 +696,7 @@ export function fitDtlLaunch(
     usedPoints: samples.length,
     carryYards,
     carrySpreadYards,
+    speedObsCostPx,
     ensembleSize: ensemble.length,
     startsRun,
     converged: false,
@@ -585,16 +731,45 @@ export function fitDtlLaunch(
   ) {
     return { ...base, declineReason: 'implausible' };
   }
+  // Prior-domination gate (observability arm AND shrinkage arm): when the
+  // data cannot tell speeds a prior σ apart AND the fitted speed is parked
+  // at the club prior's mean, the carry is a prior restatement, not a
+  // measurement. Note neither the spread nor the RMS gates above can catch
+  // this — prior pull makes every start agree on the same basin with tiny
+  // residuals. An unobserved-but-displaced fit (the data dragged the speed
+  // away from the mean; the prior only shrank it) survives, with the
+  // domination penalized through score_prior below instead.
+  const speedShrinkSigma =
+    Math.abs(best.vMph - prior.ballSpeedMph.mean) / prior.ballSpeedMph.sd;
+  if (
+    speedObsCostPx < DTL_SPEED_OBS_MIN_PX &&
+    speedShrinkSigma < PRIOR_PARK_SIGMA_MAX
+  ) {
+    return { ...base, declineReason: 'prior-dominated' };
+  }
 
   // Pinned confidence formula (mapped downstream in estimateDistance.ts):
-  // a fit that cannot beat the club prior's 0.3 cap must decline.
+  // a fit that cannot beat the club prior's 0.3 cap must decline. The spread
+  // score is only trusted when enough starts agree (ensemble >= 3); with a
+  // near-singleton ensemble the spread is unknown, so it scores 0, not 1.
+  // score_prior penalizes sub-threshold prior domination so confidence
+  // tracks how much of the carry the DATA actually pins.
   const scoreRms = clamp01(1 - bestStats.pixelRms / rmsThreshold);
-  const scoreSpread = clamp01(1 - spreadRatio / SPREAD_RATIO_MAX);
+  const scoreSpread =
+    ensemble.length >= DTL_MIN_ENSEMBLE_FOR_SPREAD
+      ? clamp01(1 - spreadRatio / SPREAD_RATIO_MAX)
+      : 0;
+  const scorePrior = clamp01(speedObsCostPx / DTL_SPEED_OBS_FULL_PX);
   const scoreGeom = teeSource === 'tap' ? (fitFov ? 0.85 : 1.0) : 0.7;
   const confidence =
     0.3 +
     0.45 *
-      clamp01(0.45 * scoreRms + 0.35 * scoreSpread + 0.2 * scoreGeom) *
+      clamp01(
+        0.35 * scoreRms +
+          0.25 * scoreSpread +
+          0.25 * scorePrior +
+          0.15 * scoreGeom,
+      ) *
       QUALITY_FACTOR[track.quality];
   if (confidence < MIN_CONFIDENCE) {
     return { ...base, declineReason: 'degenerate' };

@@ -13,6 +13,7 @@ import {
   fitDtlLaunch,
   DTL_MIN_POINTS,
   DTL_MAX_CONFIDENCE,
+  DTL_SPEED_OBS_MIN_PX,
   type DtlFitResult,
 } from '../estimate/dtlFit';
 import {
@@ -325,6 +326,11 @@ describe('fitDtlLaunch on synthetic DTL tracks', () => {
     );
     expect(fit.carrySpreadYards).toBeGreaterThanOrEqual(0);
     expect(fit.carrySpreadYards / fit.carryYards).toBeLessThanOrEqual(0.3);
+    // Known FOV: the image evidence genuinely identifies the ball speed,
+    // so the prior-domination probe reports a real pixel cost for moving
+    // the speed a prior sigma.
+    expect(Number.isFinite(fit.speedObsCostPx)).toBe(true);
+    expect(fit.speedObsCostPx).toBeGreaterThanOrEqual(DTL_SPEED_OBS_MIN_PX);
     expect(fit.ensembleSize).toBeGreaterThanOrEqual(1);
     expect(fit.ensembleSize).toBeLessThanOrEqual(fit.startsRun);
     expect(fit.startsRun).toBe(12);
@@ -413,6 +419,33 @@ describe('fitDtlLaunch decline matrix', () => {
     });
     expect(fit.converged).toBe(false);
     expect(['poor-fit', 'degenerate']).toContain(fit.declineReason);
+  });
+
+  it("declines 'prior-dominated' when the speed is unobserved and parked at the prior mean", () => {
+    // Unknown FOV opens the speed<->focal gauge direction, so the image
+    // evidence cannot tell ball speeds a prior sigma apart (the speed-
+    // observability probe reads ~0); with the truth AT the club prior's
+    // mean the fitted speed parks there too. Pre-fix this surfaced as a
+    // high-confidence 'measurement' whose carry merely restated the club
+    // prior; now it must decline as prior-dominated.
+    const prior = { ballSpeedMph: 150, launchAngleDeg: 12, backspinRpm: 2500 };
+    const { track } = synthTrack({
+      launch: prior,
+      psiDeg: TRUE_PSI_DEG,
+      thetaDeg: TRUE_THETA_DEG,
+      hfovDeg: 44,
+      tee: SYNTH_TEE,
+      ballRadiusPx: 7,
+      numPoints: 14,
+      firstT: 0.1,
+      noisePx: 1,
+      seed: 7,
+    });
+    const model = buildCalibration(calibration(), VIDEO_META); // FOV withheld
+    const fit = fitDtlLaunch(track, model, 'driver', { teePointPx: SYNTH_TEE });
+    expect(fit.converged).toBe(false);
+    expect(fit.declineReason).toBe('prior-dominated');
+    expect(fit.speedObsCostPx).toBeLessThan(0.25);
   });
 
   it("declines 'degenerate' on a scale-ambiguous short recession", () => {

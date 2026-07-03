@@ -29,6 +29,12 @@ export interface EstimateDiagnostics {
   usedPoints?: number;
   /** DTL fit: max − min carry across the multi-start ensemble, yd. */
   carrySpreadYards?: number;
+  /**
+   * DTL fit: prior-domination / speed-observability signal — data-only
+   * pixel cost of displacing the fitted speed ±1σ_prior with every other
+   * parameter re-fit (≈ 0 ⇒ the prior, not the data, set the speed).
+   */
+  speedObsCostPx?: number;
   ensembleSize?: number;
   teeSource?: 'tap' | 'extrapolated';
   /** Why the DTL fit declined (when it did). */
@@ -68,6 +74,7 @@ export function summarizeEstimate(
     diagnostics.rmsThreshold = dtl.rmsThreshold;
     diagnostics.usedPoints = dtl.usedPoints;
     diagnostics.carrySpreadYards = dtl.carrySpreadYards;
+    diagnostics.speedObsCostPx = finiteOr(dtl.speedObsCostPx);
     diagnostics.ensembleSize = dtl.ensembleSize;
     diagnostics.teeSource = dtl.teeSource;
     diagnostics.declineReason = dtl.declineReason;

@@ -44,6 +44,8 @@ import { fitLaunchFromTrack, type LaunchFitResult } from './launchFit';
 import type { RecedingFitResult } from './recedingFit';
 import {
   DTL_MAX_CONFIDENCE,
+  DTL_MIN_ENSEMBLE_FOR_SPREAD,
+  DTL_SPEED_OBS_FULL_PX,
   fitDtlLaunch,
   type DtlFitResult,
 } from './dtlFit';
@@ -102,11 +104,20 @@ function clamp01(v: number): number {
 /**
  * Pinned DTL confidence formula, mapping into (0.3, DTL_MAX_CONFIDENCE]:
  *   score_rms    = 1 − pixelRms/rmsThreshold
- *   score_spread = 1 − (carrySpread/carry)/0.30
+ *   score_spread = 1 − (carrySpread/carry)/0.30 when ensembleSize ≥ 3,
+ *                  else 0 (a near-singleton ensemble means the other starts
+ *                  fell into different, worse basins — the spread is unknown,
+ *                  not perfect)
+ *   score_prior  = speedObsCostPx/DTL_SPEED_OBS_FULL_PX — the prior-
+ *                  domination signal, orthogonal to spread: the data-only
+ *                  pixel cost of displacing the fitted speed ±1σ_prior
+ *                  with all other parameters re-fit (≈ 0 ⇒ the club prior,
+ *                  not the data, set the speed — a prior-set carry must
+ *                  not wear measurement confidence)
  *   score_geom   = 1.0 (tap tee + user FOV/focal) | 0.85 (tap tee + fitted
  *                  FOV) | 0.70 (extrapolated tee)
- *   confidence   = 0.30 + 0.45·clamp01(0.45·rms + 0.35·spread + 0.20·geom)
- *                  ·QUALITY_FACTOR[quality]
+ *   confidence   = 0.30 + 0.45·clamp01(0.35·rms + 0.25·spread + 0.25·prior
+ *                  + 0.15·geom)·QUALITY_FACTOR[quality]
  */
 function dtlConfidence(
   model: CameraModel,
@@ -114,9 +125,13 @@ function dtlConfidence(
   dtl: DtlFitResult,
 ): number {
   const scoreRms = clamp01(1 - dtl.pixelRms / dtl.rmsThreshold);
-  const scoreSpread = clamp01(
-    1 - dtl.carrySpreadYards / Math.max(dtl.carryYards, 1e-9) / 0.3,
-  );
+  const scoreSpread =
+    dtl.ensembleSize >= DTL_MIN_ENSEMBLE_FOR_SPREAD
+      ? clamp01(
+          1 - dtl.carrySpreadYards / Math.max(dtl.carryYards, 1e-9) / 0.3,
+        )
+      : 0;
+  const scorePrior = clamp01(dtl.speedObsCostPx / DTL_SPEED_OBS_FULL_PX);
   const fovKnown =
     model.focalSource === 'explicit' || model.focalSource === 'fov';
   const scoreGeom =
@@ -124,7 +139,12 @@ function dtlConfidence(
   const confidence =
     0.3 +
     0.45 *
-      clamp01(0.45 * scoreRms + 0.35 * scoreSpread + 0.2 * scoreGeom) *
+      clamp01(
+        0.35 * scoreRms +
+          0.25 * scoreSpread +
+          0.25 * scorePrior +
+          0.15 * scoreGeom,
+      ) *
       QUALITY_FACTOR[quality];
   return Math.min(confidence, DTL_MAX_CONFIDENCE);
 }
