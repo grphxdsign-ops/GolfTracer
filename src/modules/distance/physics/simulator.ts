@@ -36,6 +36,15 @@ export interface FlightEnvironment {
    * integrator against the analytic vacuum parabola.
    */
   vacuum?: boolean;
+  /**
+   * Stop integrating after this many seconds of flight (trajectory-only
+   * use by reprojection fitters that never need the full arc). When the
+   * flight is truncated before landing, `carryYards` / `apexFeet` /
+   * `flightTimeS` / `landingAngleDeg` reflect the truncated state — only
+   * `.trajectory` (valid up to this time) should be consumed. Omitted =>
+   * behavior is byte-identical to before this option existed.
+   */
+  maxFlightTimeS?: number;
 }
 
 export interface TrajectoryPoint {
@@ -146,6 +155,12 @@ export function simulateFlight(
 ): FlightResult {
   const rho = env?.airDensityKgM3 ?? AIR_DENSITY_KG_M3;
   const vacuum = env?.vacuum ?? false;
+  // Integration horizon, s: the optional truncation cap, never beyond the
+  // global hard cap. Omitted => exactly MAX_FLIGHT_S (legacy behavior).
+  const horizonS =
+    env?.maxFlightTimeS !== undefined
+      ? Math.min(Math.max(env.maxFlightTimeS, 0), MAX_FLIGHT_S)
+      : MAX_FLIGHT_S;
 
   const v0 = mphToMps(launch.ballSpeedMph);
   const angle = degToRad(launch.launchAngleDeg);
@@ -167,7 +182,7 @@ export function simulateFlight(
   let flightTime = 0;
   let landingAngleDeg = 0;
 
-  while (t < MAX_FLIGHT_S) {
+  while (t < horizonS) {
     const prev = state;
     state = rk4Step(state, DT, rho, vacuum);
     t += DT;
@@ -196,10 +211,20 @@ export function simulateFlight(
   }
 
   if (!landed) {
-    // Degenerate launch (e.g. zero speed): report whatever we have.
+    // Degenerate launch (e.g. zero speed) or truncated flight: report
+    // whatever we have.
     carryM = state.x;
     flightTime = t;
     landingAngleDeg = radToDeg(Math.atan2(-state.vy, Math.max(state.vx, 1e-9)));
+    // Truncated flights get a final trajectory sample at the stop time so
+    // interpolating consumers cover the full requested horizon. Only when
+    // the cap was requested — legacy output stays byte-identical.
+    if (env?.maxFlightTimeS !== undefined) {
+      const lastPt = trajectory[trajectory.length - 1];
+      if (!lastPt || lastPt.t < t) {
+        trajectory.push({ t, x: state.x, y: state.y });
+      }
+    }
   }
 
   return {
