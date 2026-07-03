@@ -1,36 +1,23 @@
 /**
- * Distance module — OWNED by the distance-calibration-physics workstream
- * after scaffold. It rewrites this file (and only this shared touchpoint) to
- * register real Calibration / Results screens.
+ * Distance module — OWNED by the distance-calibration-physics workstream.
  *
- * Contract: registers exactly the fixed routes 'Calibration', 'Results';
- * consumes useSessionStore().trackingResult, publishes via
+ * Registers the fixed routes 'Calibration' and 'Results'; consumes
+ * useSessionStore().trackingResult + video metadata, publishes via
  * setCalibration / setDistance.
  */
-import { Text, View } from 'react-native';
-
 import type { AppModule } from '../../types/modules';
-import { sharedStyles, typography } from '../../app/theme';
 
-const placeholder = (label: string) => {
-  const Placeholder = () => (
-    <View style={sharedStyles.centered}>
-      <Text style={typography.title}>{label}</Text>
-      <Text style={typography.subtitle}>Coming soon</Text>
-    </View>
-  );
-  Placeholder.displayName = `DistancePlaceholder(${label})`;
-  return Placeholder;
-};
+import { CalibrationScreen } from './screens/CalibrationScreen';
+import { ResultsScreen } from './screens/ResultsScreen';
 
 export const distanceModule: AppModule = {
   name: 'distance',
   screens: [
     {
       route: 'Calibration',
-      component: placeholder('Calibration'),
+      component: CalibrationScreen,
       title: 'Calibration',
     },
-    { route: 'Results', component: placeholder('Results'), title: 'Results' },
+    { route: 'Results', component: ResultsScreen, title: 'Results' },
   ],
 };
