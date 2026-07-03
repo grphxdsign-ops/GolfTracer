@@ -1,6 +1,8 @@
 module.exports = {
   preset: 'react-native',
   setupFiles: ['./jest/setup.ts'],
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/.claude/'],
+  modulePathIgnorePatterns: ['<rootDir>/.claude/'],
   transformIgnorePatterns: [
     'node_modules/(?!(react-native|@react-native|@react-navigation|react-native-screens|react-native-safe-area-context|@shopify/react-native-skia|react-native-vision-camera|react-native-worklets-core|react-native-image-picker)/)',
   ],
