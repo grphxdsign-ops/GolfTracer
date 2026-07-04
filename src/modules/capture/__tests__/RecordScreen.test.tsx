@@ -64,6 +64,15 @@ describe('RecordScreen', () => {
     // No adapter prop: the (mocked) vision-camera hooks report no permission.
     render(<RecordScreen />);
     expect(screen.getByText('Camera access needed')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Grant camera access' }),
+    ).toBeTruthy();
+  });
+
+  it('renders the fps badge inside the stage', async () => {
+    render(<RecordScreen adapter={new FakeCameraAdapter()} />);
+    expect(await screen.findByText('240 fps · 1080p')).toBeTruthy();
+    expect(screen.getByTestId('record-fps-badge')).toBeTruthy();
   });
 
   it('surfaces adapter errors instead of crashing', async () => {

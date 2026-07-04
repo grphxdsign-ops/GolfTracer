@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   GestureResponderEvent,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -19,7 +20,20 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../../../types/navigation';
 import { useSessionStore } from '../../../state/sessionStore';
-import { colors, radii, sharedStyles, spacing, typography } from '../../../app/theme';
+import {
+  colors,
+  radii,
+  sharedStyles,
+  spacing,
+  typography,
+} from '../../../app/theme';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ProgressBar,
+  ScreenHeader,
+} from '../../../app/components';
 import { runTracking, type RunTrackingOptions } from '../tracker/pipeline';
 import { useBallPointStore } from './ballPointStore';
 import { mapTapToVideoPoint } from './tapMapping';
@@ -45,6 +59,13 @@ const RETRY_TIPS = [
 
 /** Aspect-correct placeholder box the user taps to mark the ball. */
 const BALL_BOX_HEIGHT = 180;
+
+/** Staged caption under the progress bar, keyed off pipeline progress. */
+function stageCaption(progress: number): string {
+  if (progress < 0.4) return 'Reading frames…';
+  if (progress < 0.8) return 'Following the ball…';
+  return 'Building the tracer…';
+}
 
 export function AnalyzeScreen() {
   const navigation = useNavigation<AnalyzeNavigation>();
@@ -128,10 +149,16 @@ export function AnalyzeScreen() {
   if (!frameSource) {
     return (
       <View style={sharedStyles.centered}>
-        <Text style={typography.title}>No video loaded</Text>
-        <Text style={[typography.subtitle, { marginTop: spacing.sm }]}>
-          Record or import a golf shot first, then come back to analyze it.
-        </Text>
+        <EmptyState
+          title="No video loaded"
+          body="Record or import a golf shot first, then come back to analyze it."
+        />
+        <Button
+          label="Back to home"
+          variant="ghost"
+          size="md"
+          onPress={() => navigation.navigate('Home')}
+        />
       </View>
     );
   }
@@ -139,43 +166,40 @@ export function AnalyzeScreen() {
   if (error) {
     return (
       <View style={sharedStyles.centered}>
-        <Text style={typography.title}>Analysis error</Text>
-        <Text
-          style={[typography.body, { marginVertical: spacing.md, color: colors.danger }]}
-        >
-          {error}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
+        <EmptyState title="Analysis stopped" body={error} />
+        <Button
+          label="Retry analysis"
+          variant="primary"
           onPress={retry}
-          style={sharedStyles.button}
-        >
-          <Text style={sharedStyles.buttonText}>Retry analysis</Text>
-        </Pressable>
+          style={styles.retryAction}
+        />
       </View>
     );
   }
 
   if (failed) {
     return (
-      <View style={sharedStyles.screen}>
-        <Text style={typography.title}>Couldn&apos;t track that shot</Text>
-        <Text style={[typography.subtitle, { marginVertical: spacing.sm }]}>
-          The ball was lost too soon after impact. Rather than show a wrong
-          tracer, here is how to get a clean one:
-        </Text>
-        <View style={sharedStyles.card}>
-          {RETRY_TIPS.map((tip) => (
-            <Text
+      <ScrollView
+        style={sharedStyles.screen}
+        contentContainerStyle={styles.failedContent}
+      >
+        <ScreenHeader
+          title="Couldn't track that shot"
+          subtitle="The ball was lost too soon after impact. Rather than show a wrong tracer, here is how to get a clean one:"
+        />
+        <Card>
+          {RETRY_TIPS.map((tip, i) => (
+            <View
               key={tip}
-              style={[typography.body, { marginBottom: spacing.xs }]}
+              style={[styles.tipRow, i > 0 && styles.tipRowHairline]}
             >
-              {'•'} {tip}
-            </Text>
+              <Text style={styles.tipBullet}>•</Text>
+              <Text style={styles.tipText}>{tip}</Text>
+            </View>
           ))}
-        </View>
-        <View style={sharedStyles.card}>
-          <Text style={[typography.subtitle, { marginBottom: spacing.sm }]}>
+        </Card>
+        <Card style={styles.markCard}>
+          <Text style={[typography.subtitle, { marginBottom: spacing.xs }]}>
             Mark the ball
           </Text>
           <Text style={[typography.label, { marginBottom: spacing.sm }]}>
@@ -189,7 +213,7 @@ export function AnalyzeScreen() {
             onPress={handleBallTap}
             style={[styles.tapArea, { width: boxWidth }]}
           >
-            <Text style={typography.label}>
+            <Text style={typography.caption}>
               Video frame placeholder — tap the ball
             </Text>
             {ballPoint && (
@@ -199,99 +223,121 @@ export function AnalyzeScreen() {
                 style={[
                   styles.marker,
                   {
-                    left: ballPoint.x * boxScale - 5,
-                    top: ballPoint.y * boxScale - 5,
+                    left: ballPoint.x * boxScale - 8,
+                    top: ballPoint.y * boxScale - 8,
                   },
                 ]}
-              />
+              >
+                <View style={styles.markerDot} />
+              </View>
             )}
           </Pressable>
           {ballPoint && (
-            <Pressable
-              accessibilityRole="button"
+            <Button
+              label="Clear ball point"
+              variant="ghost"
+              size="sm"
               onPress={clearBallPoint}
-              style={styles.clearButton}
-            >
-              <Text style={styles.clearButtonText}>Clear ball point</Text>
-            </Pressable>
+              style={styles.clearAction}
+            />
           )}
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={retry}
-          style={sharedStyles.button}
-        >
-          <Text style={sharedStyles.buttonText}>Retry analysis</Text>
-        </Pressable>
-      </View>
+        </Card>
+        <Button label="Retry analysis" variant="primary" onPress={retry} />
+      </ScrollView>
     );
   }
 
-  const pct = Math.round(progress * 100);
   return (
     <View style={sharedStyles.centered}>
-      <Text style={typography.title}>Analyzing shot…</Text>
-      <Text style={[typography.subtitle, { marginVertical: spacing.md }]}>
-        {pct}%
-      </Text>
-      <View
-        accessibilityRole="progressbar"
-        style={{
-          width: '80%',
-          height: 8,
-          borderRadius: radii.sm,
-          backgroundColor: colors.surfaceRaised,
-          overflow: 'hidden',
-        }}
-      >
-        <View
-          style={{
-            width: `${pct}%`,
-            height: '100%',
-            backgroundColor: colors.accent,
-          }}
+      <View style={styles.runningColumn}>
+        <Text style={[typography.heading, styles.runningTitle]}>
+          Tracking ball flight
+        </Text>
+        <ProgressBar
+          progress={progress}
+          accessibilityLabel="Analysis progress"
+          style={styles.runningBar}
         />
+        <Text style={[typography.label, styles.runningCaption]}>
+          {stageCaption(progress)}
+        </Text>
       </View>
-      <Text style={[typography.label, { marginTop: spacing.md }]}>
-        Finding impact, tracking ball flight…
-      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  retryAction: {
+    marginTop: spacing.lg,
+    alignSelf: 'stretch',
+  },
+  failedContent: {
+    paddingBottom: spacing.xl,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    paddingVertical: spacing.sm,
+  },
+  tipRowHairline: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderSubtle,
+  },
+  tipBullet: {
+    ...typography.body,
+    color: colors.textMuted,
+    marginRight: spacing.sm,
+  },
+  tipText: {
+    ...typography.body,
+    flex: 1,
+  },
+  markCard: {
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
   tapArea: {
     height: BALL_BOX_HEIGHT,
     maxWidth: '100%',
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colors.border,
-    backgroundColor: colors.background,
+    borderRadius: radii.lg,
+    backgroundColor: colors.stage,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
     overflow: 'hidden',
   },
+  /** 16pt ring in the UI accent with a center dot — the pinned ball mark. */
   marker: {
     position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.accent,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  clearButton: {
+  markerDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+  },
+  clearAction: {
     alignSelf: 'flex-start',
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceRaised,
   },
-  clearButtonText: {
-    color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: '600',
+  runningColumn: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  runningTitle: {
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  runningBar: {
+    width: '80%',
+  },
+  runningCaption: {
+    marginTop: spacing.md,
+    fontVariant: ['tabular-nums'],
   },
 });

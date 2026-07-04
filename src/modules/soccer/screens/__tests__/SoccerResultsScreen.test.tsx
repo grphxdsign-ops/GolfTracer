@@ -45,7 +45,9 @@ describe('SoccerResultsScreen', () => {
 
     expect(screen.getByText('GOAL!')).toBeTruthy();
     expect(screen.getByText(/Crossed the line 3\.97 m from the left post/)).toBeTruthy();
-    expect(screen.getByText(/km\/h shot speed/)).toBeTruthy();
+    // Hero StatTile composition: label + demoted unit (content preserved).
+    expect(screen.getByText('Peak shot speed')).toBeTruthy();
+    expect(screen.getByText('km/h')).toBeTruthy();
     expect(
       screen.getByText(/Ball distance to goal line at contact: 11\.9 m/),
     ).toBeTruthy();

@@ -4,12 +4,24 @@
  * flight, with a 0-100% correction-strength control. Publishes the
  * PerfectedResult to the sports session store and hands off to the
  * results screen.
+ *
+ * The playback control carries zero custom animation on purpose (DESIGN.md
+ * §5: high-frequency interactions get kit press feedback only); the stage
+ * uses the darkest tier so the dummy reads like broadcast graphics.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radii, sharedStyles, spacing, typography } from '../../../app/theme';
+import {
+  Button,
+  Card,
+  Chip,
+  ScreenHeader,
+  SectionLabel,
+} from '../../../app/components';
 import { navigateSport } from '../../sports/navSport';
 import { useSportsSessionStore } from '../../sports/sportsSessionStore';
 import { buildPerfectedResult, demoMeasuredFrames } from '../perfectedPipeline';
@@ -22,11 +34,14 @@ import {
 const CANVAS_WIDTH = 328;
 const CANVAS_HEIGHT = 200;
 const PLAYBACK_FPS = 15;
+/** Rendered line thickness for bones and the flight arc. */
+const LINE_THICKNESS = 2;
 
 const STRENGTH_STEPS = [0, 0.25, 0.5, 0.75, 1] as const;
 
 function Shape({ shape }: { shape: RenderShape }) {
   if (shape.kind === 'circle') {
+    // The ball is the single accent on the stage; joints stay neutral.
     const isBall = shape.role === 'ball';
     return (
       <View
@@ -57,10 +72,10 @@ function Shape({ shape }: { shape: RenderShape }) {
         styles.line,
         {
           left: (shape.x1 + shape.x2) / 2 - length / 2,
-          top: (shape.y1 + shape.y2) / 2 - 1,
+          top: (shape.y1 + shape.y2) / 2 - LINE_THICKNESS / 2,
           width: length,
           backgroundColor:
-            shape.role === 'flight' ? colors.primary : colors.textMuted,
+            shape.role === 'flight' ? colors.accent : colors.textMuted,
           transform: [{ rotate: `${angleRad}rad` }],
         },
       ]}
@@ -83,6 +98,7 @@ function DummyCanvas({ frame }: { frame: RenderedFrame }) {
 
 export function PerfectedActionScreen() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const soccerResult = useSportsSessionStore((s) => s.soccerResult);
   const setPerfectedResult = useSportsSessionStore((s) => s.setPerfectedResult);
 
@@ -135,76 +151,59 @@ export function PerfectedActionScreen() {
   return (
     <ScrollView
       style={sharedStyles.screen}
-      contentContainerStyle={{ paddingBottom: spacing.xl }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}
     >
-      <Text style={typography.title}>Perfected Action</Text>
-      <Text style={[typography.label, { marginBottom: spacing.md }]}>
-        Your motion morphed toward the cited biomechanical targets, beside
-        the simulated perfected ball flight.
-      </Text>
+      <ScreenHeader
+        title="Perfected Action"
+        subtitle="Your motion morphed toward the cited biomechanical targets, beside the simulated perfected ball flight."
+      />
 
       <DummyCanvas frame={frame} />
 
-      <Pressable
-        accessibilityRole="button"
+      <Button
+        label={playing ? 'Pause' : 'Play'}
+        variant="secondary"
         onPress={() => setPlaying((p) => !p)}
-        style={sharedStyles.button}
-      >
-        <Text style={sharedStyles.buttonText}>{playing ? 'Pause' : 'Play'}</Text>
-      </Pressable>
+        style={styles.playButton}
+      />
 
-      <Text style={[typography.subtitle, { marginBottom: spacing.xs }]}>
-        Correction strength
-      </Text>
+      <SectionLabel>Correction strength</SectionLabel>
       <View style={styles.strengthRow}>
         {STRENGTH_STEPS.map((value) => {
-          const selected = value === strength;
+          const pct = Math.round(value * 100);
           return (
-            <Pressable
+            <Chip
               key={value}
-              accessibilityRole="button"
-              accessibilityLabel={`Correction strength ${Math.round(value * 100)} percent`}
+              label={`${pct}%`}
+              selected={value === strength}
               onPress={() => setStrength(value)}
-              style={[styles.strengthChip, selected && styles.strengthChipSelected]}
-            >
-              <Text
-                style={[
-                  styles.strengthText,
-                  selected && styles.strengthTextSelected,
-                ]}
-              >
-                {Math.round(value * 100)}%
-              </Text>
-            </Pressable>
+              accessibilityLabel={`Correction strength ${pct} percent`}
+            />
           );
         })}
       </View>
 
-      <View style={sharedStyles.card}>
-        <Text style={typography.subtitle}>Perfected flight</Text>
-        <Text style={typography.body}>
+      <Card style={styles.flightCard}>
+        <Text style={[typography.subtitle, styles.flightHeading]}>
+          Perfected flight
+        </Text>
+        <Text style={styles.flightNumbers}>
           {result.flight.rangeM.toFixed(1)} m range ·{' '}
           {result.flight.apexM.toFixed(1)} m apex ·{' '}
           {result.flight.flightTimeS.toFixed(2)} s
         </Text>
         {measuredSpeedMps !== undefined ? (
-          <Text style={typography.label}>
+          <Text style={styles.flightCaption}>
             Seeded from your measured {(measuredSpeedMps * 3.6).toFixed(0)} km/h take
           </Text>
         ) : (
-          <Text style={typography.label}>
+          <Text style={styles.flightCaption}>
             Demo motion — analyze a take to seed with your own speed
           </Text>
         )}
-      </View>
+      </Card>
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={handleSave}
-        style={sharedStyles.button}
-      >
-        <Text style={sharedStyles.buttonText}>Save perfected result</Text>
-      </Pressable>
+      <Button label="Save perfected result" onPress={handleSave} />
     </ScrollView>
   );
 }
@@ -213,11 +212,10 @@ const styles = StyleSheet.create({
   canvas: {
     width: CANVAS_WIDTH,
     height: CANVAS_HEIGHT,
+    maxWidth: '100%',
     alignSelf: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.stage,
+    borderRadius: radii.lg,
     overflow: 'hidden',
     marginBottom: spacing.md,
   },
@@ -226,30 +224,35 @@ const styles = StyleSheet.create({
   },
   line: {
     position: 'absolute',
-    height: 2,
+    height: LINE_THICKNESS,
+  },
+  playButton: {
+    marginBottom: spacing.sm,
   },
   strengthRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
-  strengthChip: {
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
+  flightCard: {
+    marginBottom: spacing.lg,
   },
-  strengthChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  flightHeading: {
+    marginBottom: spacing.xs,
   },
-  strengthText: {
-    color: colors.textMuted,
-    fontWeight: '600',
-  },
-  strengthTextSelected: {
+  flightNumbers: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
     color: colors.text,
+    fontVariant: ['tabular-nums'],
+    marginBottom: spacing.xs,
+  },
+  flightCaption: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+    color: colors.textMuted,
   },
 });

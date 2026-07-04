@@ -1,5 +1,11 @@
 import { Text } from 'react-native';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -41,7 +47,30 @@ describe('AnalyzeScreen', () => {
   it('prompts for a video when no frameSource is loaded', () => {
     renderAnalyze();
     expect(screen.getByText('No video loaded')).toBeTruthy();
+    // Ghost escape hatch back out of the dead-end.
+    expect(screen.getByText('Back to home')).toBeTruthy();
     expect(runTrackingMock).not.toHaveBeenCalled();
+  });
+
+  it('shows the staged progress captions while the pipeline runs', async () => {
+    let reportProgress: ((p: number) => void) | undefined;
+    runTrackingMock.mockImplementation(
+      (_src, opts) =>
+        new Promise(() => {
+          reportProgress = opts?.onProgress;
+        }),
+    );
+    useSessionStore.setState({ frameSource: cannedFrameSource() });
+
+    renderAnalyze();
+    await waitFor(() => expect(screen.getByText('Tracking ball flight')).toBeTruthy());
+    expect(screen.getByText('Reading frames…')).toBeTruthy();
+
+    await waitFor(() => expect(reportProgress).toBeDefined());
+    act(() => reportProgress!(0.5));
+    expect(screen.getByText('Following the ball…')).toBeTruthy();
+    act(() => reportProgress!(0.9));
+    expect(screen.getByText('Building the tracer…')).toBeTruthy();
   });
 
   it('runs the pipeline, stores the result, and navigates to the preview', async () => {

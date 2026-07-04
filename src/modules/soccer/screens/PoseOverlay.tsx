@@ -3,9 +3,13 @@
  * the ball contact point) over a letterboxed video stage, following the
  * TracerOverlay adapter pattern — all geometry goes through the shared
  * overlayMath letterbox mapping, Skia is only the rendering shell.
+ *
+ * Styling (DESIGN.md §2/§6): bones and joints stay in the green family;
+ * the ball marker is the one warm element on the stage — tracer ember,
+ * consistent with the golf comet.
  */
 import { useMemo } from 'react';
-import { Canvas, Circle, Path, Skia } from '@shopify/react-native-skia';
+import { Canvas, Circle, Group, Path, Skia } from '@shopify/react-native-skia';
 
 import {
   computeLetterbox,
@@ -18,7 +22,7 @@ import {
   type Keypoint,
   type PoseFrame,
 } from '../../sports/pose/PoseAdapter';
-import { colors } from '../../../app/theme';
+import { colors, tracer } from '../../../app/theme';
 
 const L = POSE_LANDMARKS;
 
@@ -41,6 +45,17 @@ const BONES: ReadonlyArray<readonly [number, number]> = [
 ];
 
 const MIN_VISIBILITY = 0.3;
+
+/** Skeleton stroke width (round caps/joins). */
+const BONE_STROKE_WIDTH = 3;
+/** Joint dot radius. */
+const JOINT_RADIUS = 4;
+/** Stage-colored under-circle: a 1px darker outline feel around each joint. */
+const JOINT_OUTLINE_RADIUS = JOINT_RADIUS + 1;
+/** Ball marker: soft ember under-glow radius. */
+const BALL_GLOW_RADIUS = 9;
+/** Ball marker: warm core radius. */
+const BALL_CORE_RADIUS = 5;
 
 export interface PoseOverlayProps {
   pose: PoseFrame;
@@ -118,14 +133,37 @@ export function PoseOverlay({
         path={bonePath}
         color={colors.accent}
         style="stroke"
-        strokeWidth={2.5}
+        strokeWidth={BONE_STROKE_WIDTH}
         strokeCap="round"
         strokeJoin="round"
       />
       {joints.map((p, i) => (
-        <Circle key={i} cx={p.x} cy={p.y} r={3.5} color={colors.text} />
+        <Group key={i}>
+          <Circle
+            cx={p.x}
+            cy={p.y}
+            r={JOINT_OUTLINE_RADIUS}
+            color={colors.stage}
+          />
+          <Circle cx={p.x} cy={p.y} r={JOINT_RADIUS} color={colors.text} />
+        </Group>
       ))}
-      {ball ? <Circle cx={ball.x} cy={ball.y} r={5} color={colors.danger} /> : null}
+      {ball ? (
+        <Group>
+          <Circle
+            cx={ball.x}
+            cy={ball.y}
+            r={BALL_GLOW_RADIUS}
+            color={tracer.glow}
+          />
+          <Circle
+            cx={ball.x}
+            cy={ball.y}
+            r={BALL_CORE_RADIUS}
+            color={tracer.mid}
+          />
+        </Group>
+      ) : null}
     </Canvas>
   );
 }

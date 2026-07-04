@@ -1,31 +1,61 @@
 /**
- * Tracer preview: frame backdrop placeholder + the Skia tracer overlay, with
- * broadcast-style color/glow pickers, a timestamp-anchored replay animation,
- * and the handoff into distance estimation ('Calibration').
+ * Tracer preview: the broadcast-comet stage. Frame backdrop placeholder + the
+ * Skia tracer overlay with color/glow pickers, a timestamp-anchored reveal
+ * that auto-plays on mount (and on replay), a one-shot landing ring when the
+ * reveal completes, and the handoff into distance estimation ('Calibration').
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { RootStackParamList } from '../../../types/navigation';
 import type { TracerPath } from '../../../types/tracking';
 import { useSessionStore } from '../../../state/sessionStore';
-import { colors, radii, sharedStyles, spacing, typography } from '../../../app/theme';
+import {
+  colors,
+  motion,
+  radii,
+  sharedStyles,
+  spacing,
+  typography,
+} from '../../../app/theme';
+import {
+  Badge,
+  Button,
+  Chip,
+  EmptyState,
+  SectionLabel,
+  useReducedMotion,
+} from '../../../app/components';
 import { TracerOverlay } from '../../../adapters/overlay/TracerOverlay';
+import {
+  computeLetterbox,
+  videoToView,
+  type RotationDeg,
+} from '../../../adapters/overlay/overlayMath';
 
 type PreviewNavigation = NativeStackNavigationProp<
   RootStackParamList,
   'TracerPreview'
 >;
 
+/**
+ * Tracer color presets — refreshed to sit alongside the theme's `tracer`
+ * ember tokens (docs/DESIGN.md §6). Names are pinned by tests; Orange is the
+ * default and lands on the ember palette in DESIGN.md §2.
+ */
 const COLOR_PRESETS = [
-  { name: 'Red', color: '#FF3B1F', glowColor: 'rgba(255, 122, 41, 0.55)' },
-  { name: 'Orange', color: '#FF8A00', glowColor: 'rgba(255, 170, 60, 0.55)' },
-  { name: 'Yellow', color: '#FFD60A', glowColor: 'rgba(255, 220, 90, 0.5)' },
-  { name: 'Cyan', color: '#3FD8FF', glowColor: 'rgba(110, 220, 255, 0.5)' },
-  { name: 'White', color: '#FFFFFF', glowColor: 'rgba(255, 255, 255, 0.45)' },
+  { name: 'Red', color: '#FF4D00', glowColor: 'rgba(255, 77, 0, 0.35)' },
+  { name: 'Orange', color: '#FF9E2C', glowColor: 'rgba(255, 122, 26, 0.35)' },
+  { name: 'Yellow', color: '#FFD60A', glowColor: 'rgba(255, 214, 10, 0.32)' },
+  { name: 'Cyan', color: '#3FD8FF', glowColor: 'rgba(63, 216, 255, 0.32)' },
+  { name: 'White', color: '#F2F7F3', glowColor: 'rgba(242, 247, 243, 0.30)' },
 ] as const;
+
+/** Orange is the default preset (DESIGN.md §6). */
+const DEFAULT_COLOR_INDEX = 1;
 
 const GLOW_PRESETS = [
   { name: 'Subtle', glowWidth: 10 },
@@ -33,16 +63,35 @@ const GLOW_PRESETS = [
   { name: 'Off', glowWidth: 0 },
 ] as const;
 
+const QUALITY_META: Record<
+  string,
+  { label: string; tone: 'success' | 'warning' | 'neutral' }
+> = {
+  high: { label: 'High quality', tone: 'success' },
+  medium: { label: 'Medium quality', tone: 'warning' },
+  low: { label: 'Low quality', tone: 'neutral' },
+};
+
+/** Reveal duration: motion token clamped to the §5 baseline window. */
+const REVEAL_MS = Math.min(900, Math.max(600, motion.duration.reveal));
+
+const SWATCH_SIZE = 36;
+const LANDING_RING_SIZE = 44;
+
 export function TracerPreviewScreen() {
   const navigation = useNavigation<PreviewNavigation>();
+  const insets = useSafeAreaInsets();
   const result = useSessionStore((s) => s.trackingResult);
   const video = useSessionStore((s) => s.video);
+  const reducedMotion = useReducedMotion();
 
-  const [colorIndex, setColorIndex] = useState(0);
+  const [colorIndex, setColorIndex] = useState(DEFAULT_COLOR_INDEX);
   const [glowIndex, setGlowIndex] = useState(0);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [revealFraction, setRevealFraction] = useState(1);
+  const [landing, setLanding] = useState(false);
   const rafRef = useRef<number | null>(null);
+  const ringAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(
     () => () => {
@@ -55,7 +104,7 @@ export function TracerPreviewScreen() {
 
   const tracer: TracerPath | null = useMemo(() => {
     if (!result) return null;
-    const preset = COLOR_PRESETS[colorIndex] ?? COLOR_PRESETS[0];
+    const preset = COLOR_PRESETS[colorIndex] ?? COLOR_PRESETS[DEFAULT_COLOR_INDEX];
     const glow = GLOW_PRESETS[glowIndex] ?? GLOW_PRESETS[0];
     return {
       ...result.tracer,
@@ -68,46 +117,87 @@ export function TracerPreviewScreen() {
     };
   }, [result, colorIndex, glowIndex]);
 
+  /** One expanding ring at the landing point when the reveal completes. */
+  const playLandingMoment = useCallback(() => {
+    if (reducedMotion) return;
+    setLanding(true);
+    ringAnim.setValue(0);
+    Animated.timing(ringAnim, {
+      toValue: 1,
+      duration: 500,
+      easing: motion.easing.standard,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setLanding(false);
+    });
+  }, [reducedMotion, ringAnim]);
+
   const replay = useCallback(() => {
-    if (!result || typeof requestAnimationFrame !== 'function') return;
+    if (!result) return;
     const points = result.tracer.points;
     if (points.length < 2) return;
-    const flightMs =
-      points[points.length - 1]!.timestampMs - points[0]!.timestampMs;
-    // Slow-motion clips replay in real flight time; floor at 1.2s so short
-    // paths are still readable.
-    const durationMs = Math.max(1200, flightMs);
+    if (reducedMotion || typeof requestAnimationFrame !== 'function') {
+      // Reduce-motion: jump straight to the fully drawn tracer.
+      setRevealFraction(1);
+      return;
+    }
     const start = Date.now();
     if (rafRef.current !== null && typeof cancelAnimationFrame === 'function') {
       cancelAnimationFrame(rafRef.current);
     }
     const tick = () => {
-      const f = Math.min(1, (Date.now() - start) / durationMs);
+      const f = Math.min(1, (Date.now() - start) / REVEAL_MS);
       setRevealFraction(f);
       if (f < 1) {
         rafRef.current = requestAnimationFrame(tick);
       } else {
         rafRef.current = null;
+        playLandingMoment();
       }
     };
     setRevealFraction(0);
     rafRef.current = requestAnimationFrame(tick);
-  }, [result]);
+  }, [result, reducedMotion, playLandingMoment]);
+
+  // Auto-play the reveal once on mount (and again whenever a new result
+  // arrives) — the tracer is the star; it should never sit pre-drawn.
+  useEffect(() => {
+    replay();
+  }, [replay]);
 
   if (!result || !tracer) {
     return (
       <View style={sharedStyles.centered}>
-        <Text style={typography.title}>No tracer yet</Text>
-        <Text style={[typography.subtitle, { marginTop: spacing.sm }]}>
-          Run the analysis first to see your ball flight.
-        </Text>
+        <EmptyState
+          title="No tracer yet"
+          body="Run the analysis first to see your ball flight."
+        />
       </View>
     );
   }
 
   const videoWidth = video?.width ?? result.track.frameWidth;
   const videoHeight = video?.height ?? result.track.frameHeight;
-  const rotationDeg = video?.rotationDeg ?? 0;
+  const rotationDeg: RotationDeg = video?.rotationDeg ?? 0;
+  const quality = QUALITY_META[result.track.quality] ?? {
+    label: 'Low quality',
+    tone: 'neutral' as const,
+  };
+
+  const lastPoint = result.tracer.points[result.tracer.points.length - 1];
+  const landingPoint =
+    landing && lastPoint && stageSize.width > 0 && stageSize.height > 0
+      ? videoToView(
+          lastPoint,
+          computeLetterbox(
+            videoWidth,
+            videoHeight,
+            rotationDeg,
+            stageSize.width,
+            stageSize.height,
+          ),
+        )
+      : null;
 
   return (
     <View style={sharedStyles.screen}>
@@ -119,22 +209,9 @@ export function TracerPreviewScreen() {
             height: e.nativeEvent.layout.height,
           })
         }
-        style={{
-          flex: 1,
-          backgroundColor: '#08130C',
-          borderRadius: radii.md,
-          borderWidth: 1,
-          borderColor: colors.border,
-          overflow: 'hidden',
-          marginBottom: spacing.md,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
+        style={styles.stage}
       >
-        <Text style={typography.label}>Video frame preview</Text>
-        <Text style={[typography.label, { color: colors.textDisabled }]}>
-          quality: {result.track.quality}
-        </Text>
+        <Text style={typography.caption}>Video frame preview</Text>
         {stageSize.width > 0 && stageSize.height > 0 ? (
           <TracerOverlay
             tracer={tracer}
@@ -146,68 +223,132 @@ export function TracerPreviewScreen() {
             revealFraction={revealFraction}
           />
         ) : null}
+        {landingPoint ? (
+          <Animated.View
+            pointerEvents="none"
+            testID="landing-ring"
+            style={[
+              styles.landingRing,
+              {
+                left: landingPoint.x - LANDING_RING_SIZE / 2,
+                top: landingPoint.y - LANDING_RING_SIZE / 2,
+                borderColor: tracer.style.color,
+                opacity: ringAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.8, 0],
+                }),
+                transform: [{ scale: ringAnim }],
+              },
+            ]}
+          />
+        ) : null}
       </View>
 
-      <Text style={[typography.label, { marginBottom: spacing.xs }]}>
-        Tracer color
-      </Text>
-      <View style={{ flexDirection: 'row', marginBottom: spacing.sm }}>
-        {COLOR_PRESETS.map((preset, i) => (
-          <Pressable
+      <View style={styles.qualityRow}>
+        <Badge label={quality.label} tone={quality.tone} />
+      </View>
+
+      <SectionLabel>Tracer color</SectionLabel>
+      <View style={styles.swatchRow}>
+        {COLOR_PRESETS.map((preset, i) => {
+          const selected = i === colorIndex;
+          return (
+            <Pressable
+              key={preset.name}
+              accessibilityRole="button"
+              accessibilityLabel={`Tracer color ${preset.name}`}
+              accessibilityState={{ selected }}
+              onPress={() => setColorIndex(i)}
+              style={[styles.swatchRing, selected && styles.swatchRingSelected]}
+            >
+              <View
+                style={[styles.swatch, { backgroundColor: preset.color }]}
+              />
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <SectionLabel>Glow</SectionLabel>
+      <View style={styles.glowRow}>
+        {GLOW_PRESETS.map((preset, i) => (
+          <Chip
             key={preset.name}
-            accessibilityRole="button"
-            accessibilityLabel={`Tracer color ${preset.name}`}
-            accessibilityState={{ selected: i === colorIndex }}
-            onPress={() => setColorIndex(i)}
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 17,
-              marginRight: spacing.sm,
-              backgroundColor: preset.color,
-              borderWidth: i === colorIndex ? 3 : 1,
-              borderColor: i === colorIndex ? colors.accent : colors.border,
-            }}
+            label={preset.name}
+            selected={i === glowIndex}
+            onPress={() => setGlowIndex(i)}
           />
         ))}
       </View>
 
-      <Text style={[typography.label, { marginBottom: spacing.xs }]}>Glow</Text>
-      <View style={{ flexDirection: 'row', marginBottom: spacing.md }}>
-        {GLOW_PRESETS.map((preset, i) => (
-          <Pressable
-            key={preset.name}
-            accessibilityRole="button"
-            accessibilityState={{ selected: i === glowIndex }}
-            onPress={() => setGlowIndex(i)}
-            style={{
-              paddingVertical: spacing.xs,
-              paddingHorizontal: spacing.md,
-              marginRight: spacing.sm,
-              borderRadius: radii.sm,
-              backgroundColor:
-                i === glowIndex ? colors.primary : colors.surfaceRaised,
-            }}
-          >
-            <Text style={sharedStyles.buttonText}>{preset.name}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Pressable
-        accessibilityRole="button"
+      <Button
+        label="Replay tracer"
+        variant="ghost"
+        size="md"
         onPress={replay}
-        style={[sharedStyles.button, { backgroundColor: colors.surfaceRaised }]}
-      >
-        <Text style={sharedStyles.buttonText}>Replay tracer</Text>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
+        style={styles.replayAction}
+      />
+      <Button
+        label="Estimate distance"
+        variant="primary"
         onPress={() => navigation.navigate('Calibration')}
-        style={sharedStyles.button}
-      >
-        <Text style={sharedStyles.buttonText}>Estimate distance</Text>
-      </Pressable>
+        style={[styles.cta, { marginBottom: spacing.md + insets.bottom }]}
+      />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  stage: {
+    flex: 1,
+    backgroundColor: colors.stage,
+    borderRadius: radii.lg,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  landingRing: {
+    position: 'absolute',
+    width: LANDING_RING_SIZE,
+    height: LANDING_RING_SIZE,
+    borderRadius: LANDING_RING_SIZE / 2,
+    borderWidth: 2,
+  },
+  qualityRow: {
+    flexDirection: 'row',
+    marginTop: spacing.sm,
+  },
+  swatchRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  /** 2px selection ring in colors.text, offset 2 from the swatch fill. */
+  swatchRing: {
+    width: SWATCH_SIZE + 8,
+    height: SWATCH_SIZE + 8,
+    borderRadius: (SWATCH_SIZE + 8) / 2,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swatchRingSelected: {
+    borderColor: colors.text,
+  },
+  swatch: {
+    width: SWATCH_SIZE,
+    height: SWATCH_SIZE,
+    borderRadius: SWATCH_SIZE / 2,
+  },
+  glowRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  replayAction: {
+    alignSelf: 'center',
+    marginTop: spacing.lg,
+  },
+  cta: {
+    marginTop: spacing.sm,
+  },
+});

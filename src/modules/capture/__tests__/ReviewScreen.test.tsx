@@ -6,6 +6,10 @@ import { TrimmedFrameSource } from '../../../adapters/frames/TrimmedFrameSource'
 import { useCaptureStore } from '../logic/captureStore';
 import { useSessionStore } from '../../../state/sessionStore';
 
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual<typeof import('@react-navigation/native')>(

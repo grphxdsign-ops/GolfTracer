@@ -25,12 +25,12 @@ export const soccerModule: SportAppModule = {
     {
       route: 'SoccerAnalyze',
       component: SoccerAnalyzeScreen,
-      title: 'Analyze Soccer Shot',
+      title: 'Analyze soccer shot',
     },
     {
       route: 'SoccerResults',
       component: SoccerResultsScreen,
-      title: 'Soccer Results',
+      title: 'Soccer results',
     },
   ],
 };

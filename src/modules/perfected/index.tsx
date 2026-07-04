@@ -54,12 +54,12 @@ export const perfectedModule: { name: string; screens: ScreenRegistration[] } = 
     {
       route: 'PerfectedAction',
       component: PerfectedActionScreen,
-      title: 'Perfected Action',
+      title: 'Perfected action',
     },
     {
       route: 'PerfectedResults',
       component: PerfectedResultsScreen,
-      title: 'Perfected Results',
+      title: 'Perfected results',
     },
   ],
 };

@@ -1,18 +1,44 @@
 /**
  * Results screen: runs the distance estimator against the tracked shot and
  * calibration, and presents carry/total with an honest method badge and
- * confidence meter. A low-confidence club-prior fallback is visually
- * distinct — we never dress a guess up as a measurement.
+ * confidence meter. The hero carry number counts up once on reveal — the
+ * sanctioned celebration moment. A low-confidence club-prior fallback is
+ * visually distinct — we never dress a guess up as a measurement.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { EstimationMethod, RootStackParamList } from '../../../types';
 import { useSessionStore } from '../../../state/sessionStore';
 import { useBallPointStore } from '../../tracking/screens/ballPointStore';
-import { colors, radii, sharedStyles, spacing, typography } from '../../../app/theme';
+import {
+  colors,
+  motion,
+  sharedStyles,
+  spacing,
+  typography,
+} from '../../../app/theme';
+import {
+  Badge,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  ProgressBar,
+  SectionLabel,
+  StatTile,
+  useReducedMotion,
+} from '../../../app/components';
 import {
   estimateDistance,
   type DistanceEstimateResult,
@@ -24,32 +50,78 @@ type ResultsNavigation = NativeStackNavigationProp<RootStackParamList, 'Results'
 
 const METHOD_META: Record<
   EstimationMethod,
-  { label: string; description: string; color: string }
+  {
+    label: string;
+    description: string;
+    tone: 'success' | 'accent' | 'warning';
+  }
 > = {
   homography: {
     label: 'Measured',
     description: 'Landing point measured from your ground reference points.',
-    color: colors.success,
+    tone: 'success',
   },
   'physics-fit': {
     label: 'Physics fit',
     description: 'Ball flight model fitted to the tracked trajectory.',
-    color: colors.primary,
+    tone: 'accent',
   },
   'club-prior': {
     label: 'Club average',
     description:
       'Not enough tracking data — this is a typical distance for your club, not a measurement of this shot.',
-    color: colors.danger,
+    tone: 'warning',
   },
 };
 
-function Chip({ label, value }: { label: string; value: string }) {
+/**
+ * Hero carry number with a one-shot count-up on reveal (DESIGN.md §1/§5) —
+ * an Animated.Value drives a JS listener into Text state; reduce-motion
+ * renders the final value instantly.
+ */
+function HeroCarry({
+  carryYards,
+  approx,
+}: {
+  carryYards: number;
+  approx: boolean;
+}) {
+  const reducedMotion = useReducedMotion();
+  const target = Math.round(carryYards);
+  const [shown, setShown] = useState(reducedMotion ? target : 0);
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (reducedMotion) {
+      setShown(target);
+      return;
+    }
+    const listener = anim.addListener(({ value }) =>
+      setShown(Math.round(value)),
+    );
+    const timing = Animated.timing(anim, {
+      toValue: target,
+      duration: motion.duration.countUp,
+      easing: motion.easing.enter,
+      // JS listener drives a Text state update — cannot use the native driver.
+      useNativeDriver: false,
+    });
+    timing.start();
+    return () => {
+      timing.stop();
+      anim.removeListener(listener);
+    };
+    // One-shot: the celebration plays once per estimate, not on re-renders.
+  }, [anim, target, reducedMotion]);
+
   return (
-    <View style={styles.chip}>
-      <Text style={styles.chipValue}>{value}</Text>
-      <Text style={typography.label}>{label}</Text>
-    </View>
+    <StatTile
+      size="hero"
+      label="Carry"
+      value={String(shown)}
+      unit="yd"
+      approx={approx}
+    />
   );
 }
 
@@ -65,27 +137,59 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 /**
  * Collapsible diagnostics for the DTL 3D fit (dtlFit estimates only) —
  * rendered from the same summarizeEstimate() record the offline validation
- * grid reports, so the app surfaces exactly what was validated.
+ * grid reports, so the app surfaces exactly what was validated. Expansion is
+ * a 200ms opacity + translateY entrance (content conditionally rendered).
  */
 function FitDetails({ estimate }: { estimate: DistanceEstimateResult }) {
+  const reducedMotion = useReducedMotion();
   const [expanded, setExpanded] = useState(false);
+  const entrance = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!expanded) return;
+    if (reducedMotion) {
+      entrance.setValue(1);
+      return;
+    }
+    entrance.setValue(0);
+    Animated.timing(entrance, {
+      toValue: 1,
+      duration: motion.duration.base,
+      easing: motion.easing.enter,
+      useNativeDriver: true,
+    }).start();
+  }, [expanded, reducedMotion, entrance]);
+
   if (!estimate.dtlFit) {
     return null;
   }
   const d = summarizeEstimate(estimate);
   return (
-    <View style={styles.fitDetails}>
+    <Card style={styles.fitDetails}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Toggle fit details"
+        accessibilityState={{ expanded }}
         onPress={() => setExpanded((v) => !v)}
         style={styles.fitDetailsHeader}
       >
-        <Text style={styles.fitDetailsTitle}>Fit details</Text>
-        <Text style={styles.fitDetailsTitle}>{expanded ? '▾' : '▸'}</Text>
+        <Text style={typography.subtitle}>Fit details</Text>
+        <Text style={styles.fitDetailsChevron}>{expanded ? '▾' : '▸'}</Text>
       </Pressable>
       {expanded ? (
-        <View>
+        <Animated.View
+          style={{
+            opacity: entrance,
+            transform: [
+              {
+                translateY: entrance.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [8, 0],
+                }),
+              },
+            ],
+          }}
+        >
           {d.azimuthDeg !== undefined ? (
             <DetailRow label="Azimuth" value={`${d.azimuthDeg.toFixed(1)}°`} />
           ) : null}
@@ -122,32 +226,21 @@ function FitDetails({ estimate }: { estimate: DistanceEstimateResult }) {
               value={d.teeSource === 'tap' ? 'Ball tap' : 'Extrapolated'}
             />
           ) : null}
-        </View>
+        </Animated.View>
       ) : null}
-    </View>
+    </Card>
   );
 }
 
 function ConfidenceMeter({ confidence }: { confidence: number }) {
   const pct = Math.round(confidence * 100);
-  const barColor =
-    confidence >= 0.6
-      ? colors.success
-      : confidence >= 0.35
-        ? colors.accent
-        : colors.danger;
   return (
-    <View style={{ marginTop: spacing.sm }}>
-      <View style={styles.meterTrack}>
-        <View
-          accessibilityLabel={`Confidence ${pct} percent`}
-          style={[
-            styles.meterFill,
-            { width: `${pct}%`, backgroundColor: barColor },
-          ]}
-        />
-      </View>
-      <Text style={[typography.label, { marginTop: spacing.xs }]}>
+    <View style={styles.meter}>
+      <ProgressBar
+        progress={confidence}
+        accessibilityLabel={`Confidence ${pct} percent`}
+      />
+      <Text style={[typography.caption, { marginTop: spacing.xs }]}>
         Confidence {pct}%
       </Text>
     </View>
@@ -156,6 +249,7 @@ function ConfidenceMeter({ confidence }: { confidence: number }) {
 
 export function ResultsScreen() {
   const navigation = useNavigation<ResultsNavigation>();
+  const insets = useSafeAreaInsets();
   const trackingResult = useSessionStore((s) => s.trackingResult);
   const calibration = useSessionStore((s) => s.calibration);
   const video = useSessionStore((s) => s.video);
@@ -209,19 +303,16 @@ export function ResultsScreen() {
   if (!estimate) {
     return (
       <View style={sharedStyles.centered}>
-        <Text style={typography.title}>No shot to analyze</Text>
-        <Text style={[typography.subtitle, { marginBottom: spacing.lg }]}>
-          {!trackingResult
-            ? 'Track a shot first, then calibrate.'
-            : 'Complete calibration first.'}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => navigation.navigate('Home')}
-          style={sharedStyles.button}
-        >
-          <Text style={sharedStyles.buttonText}>Home</Text>
-        </Pressable>
+        <EmptyState
+          title="No shot to analyze"
+          body={
+            !trackingResult
+              ? 'Track a shot first, then calibrate.'
+              : 'Complete calibration first.'
+          }
+          actionLabel="Home"
+          onAction={() => navigation.navigate('Home')}
+        />
       </View>
     );
   }
@@ -232,36 +323,39 @@ export function ResultsScreen() {
   return (
     <ScrollView
       style={sharedStyles.screen}
-      contentContainerStyle={{ paddingBottom: spacing.xl }}
+      contentContainerStyle={{ paddingBottom: spacing.md + insets.bottom }}
     >
-      <View
-        accessibilityLabel={`Estimation method: ${meta.label}`}
-        style={[styles.badge, { borderColor: meta.color }]}
-      >
-        <Text style={[styles.badgeText, { color: meta.color }]}>
-          {meta.label}
-        </Text>
+      <View style={styles.badgeRow}>
+        <Badge
+          label={meta.label}
+          tone={meta.tone}
+          accessibilityLabel={`Estimation method: ${meta.label}`}
+        />
       </View>
-      <Text style={[typography.label, { marginBottom: spacing.md }]}>
+      {isFallback ? (
+        <Text style={[typography.caption, styles.fallbackCaption]}>
+          Estimate only — based on club averages
+        </Text>
+      ) : null}
+      <Text style={[typography.label, styles.methodDescription]}>
         {meta.description}
       </Text>
 
-      <View style={[sharedStyles.card, isFallback && styles.fallbackCard]}>
-        <Text style={styles.heroValue}>
-          {Math.round(estimate.carryYards)}
-          <Text style={styles.heroUnit}> yds carry</Text>
-        </Text>
-        <Text style={styles.totalValue}>
-          {Math.round(estimate.totalYards)} yds total
-        </Text>
-        {isFallback ? (
-          <Text style={[typography.label, { color: colors.danger }]}>
-            Estimate only — based on club averages
-          </Text>
-        ) : null}
+      <Card variant="raised">
+        <HeroCarry carryYards={estimate.carryYards} approx={isFallback} />
+        <View style={styles.totalTile}>
+          <StatTile
+            size="standard"
+            label="Total"
+            value={String(Math.round(estimate.totalYards))}
+            unit="yd"
+            approx={isFallback}
+          />
+        </View>
         <ConfidenceMeter confidence={estimate.confidence} />
-      </View>
+      </Card>
 
+      <SectionLabel>Flight</SectionLabel>
       <View style={styles.chipRow}>
         {estimate.apexFeet !== undefined ? (
           <Chip label="Apex" value={`${Math.round(estimate.apexFeet)} ft`} />
@@ -273,16 +367,10 @@ export function ResultsScreen() {
           />
         ) : null}
         {estimate.launchAngleDeg !== undefined ? (
-          <Chip
-            label="Launch"
-            value={`${estimate.launchAngleDeg.toFixed(1)}°`}
-          />
+          <Chip label="Launch" value={`${estimate.launchAngleDeg.toFixed(1)}°`} />
         ) : null}
         {estimate.backspinRpm !== undefined ? (
-          <Chip
-            label="Spin"
-            value={`${Math.round(estimate.backspinRpm)} rpm`}
-          />
+          <Chip label="Spin" value={`${Math.round(estimate.backspinRpm)} rpm`} />
         ) : null}
         {estimate.flightTimeS !== undefined ? (
           <Chip label="Flight" value={`${estimate.flightTimeS.toFixed(1)} s`} />
@@ -291,58 +379,40 @@ export function ResultsScreen() {
 
       <FitDetails estimate={estimate} />
 
-      <Pressable
-        accessibilityRole="button"
+      <Button
+        label="New shot"
+        variant="primary"
         onPress={handleNewShot}
-        style={sharedStyles.button}
-      >
-        <Text style={sharedStyles.buttonText}>New shot</Text>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
+        style={styles.cta}
+      />
+      <Button
+        label="Home"
+        variant="ghost"
+        size="md"
         onPress={() => navigation.navigate('Home')}
-        style={[sharedStyles.button, styles.secondaryButton]}
-      >
-        <Text style={sharedStyles.buttonText}>Home</Text>
-      </Pressable>
+        style={styles.homeAction}
+      />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  badge: {
-    alignSelf: 'flex-start',
-    borderWidth: 1.5,
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+  badgeRow: {
+    flexDirection: 'row',
     marginBottom: spacing.sm,
   },
-  badgeText: {
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  fallbackCard: {
-    borderColor: colors.danger,
-    borderStyle: 'dashed',
-  },
-  heroValue: {
-    fontSize: 56,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  heroUnit: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  totalValue: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: colors.accent,
+  fallbackCaption: {
+    color: colors.warning,
     marginBottom: spacing.xs,
+  },
+  methodDescription: {
+    marginBottom: spacing.md,
+  },
+  totalTile: {
+    marginTop: spacing.md,
+  },
+  meter: {
+    marginTop: spacing.md,
   },
   chipRow: {
     flexDirection: 'row',
@@ -350,41 +420,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
-  chip: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    alignItems: 'center',
-    minWidth: 92,
-  },
-  chipValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  meterTrack: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.surfaceRaised,
-    overflow: 'hidden',
-  },
-  meterFill: {
-    height: 8,
-    borderRadius: 4,
-  },
-  secondaryButton: {
-    backgroundColor: colors.surfaceRaised,
-  },
   fitDetails: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
     marginBottom: spacing.md,
   },
   fitDetailsHeader: {
@@ -392,10 +428,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  fitDetailsTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.text,
+  fitDetailsChevron: {
+    ...typography.subtitle,
+    color: colors.textMuted,
   },
   detailRow: {
     flexDirection: 'row',
@@ -407,5 +442,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  cta: {
+    marginTop: spacing.sm,
+  },
+  homeAction: {
+    alignSelf: 'center',
+    marginTop: spacing.xs,
   },
 });

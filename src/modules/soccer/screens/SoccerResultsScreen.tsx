@@ -1,17 +1,30 @@
 /**
  * Soccer results screen: the measure_plan-style readout — GOAL? verdict with
- * crossing coordinates, peak SHOT SPEED, ball distance to the goal line at
- * contact, the Pose-at-Contact freeze-frame (skeleton over a letterboxed
- * stage) with the joint-angle table, and the fast-vs-slow take insights
- * once two takes exist.
+ * crossing coordinates, peak SHOT SPEED (count-up hero stat), ball distance
+ * to the goal line at contact, the Pose-at-Contact freeze-frame (skeleton
+ * over a letterboxed stage) with the joint-angle table, and the fast-vs-slow
+ * take insights once two takes exist.
+ *
+ * Motion (DESIGN.md §5): a single count-up on the speed hero and a 200ms
+ * fade + translateY entrance on the three result groups, 60ms stagger,
+ * reduce-motion → instant.
  */
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { RootStackParamList } from '../../../types/navigation';
-import { colors, radii, sharedStyles, spacing, typography } from '../../../app/theme';
+import { colors, motion, radii, sharedStyles, spacing, typography } from '../../../app/theme';
+import {
+  Button,
+  Card,
+  EmptyState,
+  StatTile,
+  useReducedMotion,
+} from '../../../app/components';
 import { useSessionStore } from '../../../state/sessionStore';
 import {
   useSportsSessionStore,
@@ -26,6 +39,10 @@ import { JOINT_LABELS, type JointKey } from '../analysis/takeCompare';
 import { PoseOverlay } from './PoseOverlay';
 
 const STAGE_HEIGHT = 220;
+/** Entrance offset for the section reveal (translateY, px). */
+const ENTRANCE_OFFSET = 8;
+/** Stagger between the three result groups (DESIGN.md §5: ≤5 × 60ms). */
+const ENTRANCE_STAGGER_MS = 60;
 
 function goalHeadline(take: SoccerTakeResult): {
   label: string;
@@ -68,19 +85,19 @@ function AngleTable({ table }: { table: JointAngleTable }) {
   return (
     <View>
       <View style={styles.tableRow}>
-        <Text style={[typography.label, styles.tableJoint]}>Joint angle</Text>
-        <Text style={[typography.label, styles.tableCell]}>Left</Text>
-        <Text style={[typography.label, styles.tableCell]}>Right</Text>
+        <Text style={[typography.caption, styles.tableJoint]}>Joint angle</Text>
+        <Text style={[typography.caption, styles.tableCell]}>Left</Text>
+        <Text style={[typography.caption, styles.tableCell]}>Right</Text>
       </View>
       {JOINT_KEYS.map((key) => (
         <View key={key} style={styles.tableRow}>
           <Text style={[typography.body, styles.tableJoint]}>
             {JOINT_LABELS[key]}
           </Text>
-          <Text style={[typography.body, styles.tableCell]}>
+          <Text style={[styles.tableValue, styles.tableCell]}>
             {fmt(table.left, key)}
           </Text>
-          <Text style={[typography.body, styles.tableCell]}>
+          <Text style={[styles.tableValue, styles.tableCell]}>
             {fmt(table.right, key)}
           </Text>
         </View>
@@ -89,22 +106,99 @@ function AngleTable({ table }: { table: JointAngleTable }) {
   );
 }
 
+/** One-shot count-up for the hero speed (motion.duration.countUp). */
+function useCountUp(target: number, reduced: boolean): string {
+  const [display, setDisplay] = useState(0);
+  const animRef = useRef<Animated.Value | null>(null);
+
+  useEffect(() => {
+    if (reduced) {
+      setDisplay(target);
+      return;
+    }
+    const anim = new Animated.Value(0);
+    animRef.current = anim;
+    const id = anim.addListener(({ value }) => setDisplay(value));
+    Animated.timing(anim, {
+      toValue: target,
+      duration: motion.duration.countUp,
+      easing: motion.easing.standard,
+      // Listener-driven value → JS driver by necessity.
+      useNativeDriver: false,
+    }).start();
+    return () => {
+      anim.removeListener(id);
+      anim.stopAnimation();
+    };
+  }, [target, reduced]);
+
+  return String(Math.round(display));
+}
+
+/** Section entrance: fade + translateY 8→0, 200ms, staggered by order. */
+function Reveal({
+  order,
+  reduced,
+  children,
+}: {
+  order: number;
+  reduced: boolean;
+  children: ReactNode;
+}) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(ENTRANCE_OFFSET)).current;
+
+  useEffect(() => {
+    if (reduced) {
+      opacity.setValue(1);
+      translateY.setValue(0);
+      return;
+    }
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: motion.duration.base,
+        delay: order * ENTRANCE_STAGGER_MS,
+        easing: motion.easing.enter,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: motion.duration.base,
+        delay: order * ENTRANCE_STAGGER_MS,
+        easing: motion.easing.enter,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [order, reduced, opacity, translateY]);
+
+  return (
+    <Animated.View style={{ opacity, transform: [{ translateY }] }}>
+      {children}
+    </Animated.View>
+  );
+}
+
 type ResultsNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 export function SoccerResultsScreen() {
   const navigation = useNavigation<ResultsNavigation>();
+  const insets = useSafeAreaInsets();
+  const reduced = useReducedMotion();
   const result = useSportsSessionStore((s) => s.soccerResult);
   const video = useSessionStore((s) => s.video);
   const [stageWidth, setStageWidth] = useState(0);
 
   const take = result?.takes[result.takes.length - 1] ?? null;
+  const speedValue = useCountUp(Math.round(take?.peakSpeedKmh ?? 0), reduced);
+
   if (!result || !take) {
     return (
       <View style={sharedStyles.centered}>
-        <Text style={typography.title}>No soccer analysis yet</Text>
-        <Text style={[typography.subtitle, { marginTop: spacing.sm }]}>
-          Analyze a shot first — the results land here.
-        </Text>
+        <EmptyState
+          title="No soccer analysis yet"
+          body="Analyze a shot first — the results land here."
+        />
       </View>
     );
   }
@@ -118,132 +212,141 @@ export function SoccerResultsScreen() {
   return (
     <ScrollView
       style={sharedStyles.screen}
-      contentContainerStyle={{ paddingBottom: spacing.xl }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}
     >
-      <Text style={[typography.label, { marginBottom: spacing.xs }]}>
-        {take.label}
-        {isBest ? ' · fastest take' : ''}
-      </Text>
-
-      <View
-        accessibilityLabel={`Goal verdict: ${headline.label}`}
-        style={[styles.badge, { borderColor: headline.color }]}
-      >
-        <Text style={[styles.badgeText, { color: headline.color }]}>
+      <Reveal order={0} reduced={reduced}>
+        <Text style={styles.takeLabel}>
+          {take.label}
+          {isBest ? ' · fastest take' : ''}
+        </Text>
+        <Text
+          accessibilityRole="header"
+          accessibilityLabel={`Goal verdict: ${headline.label}`}
+          style={[styles.verdict, { color: headline.color }]}
+        >
           {headline.label}
         </Text>
-      </View>
-      <Text style={[typography.label, { marginBottom: spacing.md }]}>
-        {headline.detail}
-      </Text>
+        <Text style={styles.verdictDetail}>{headline.detail}</Text>
+      </Reveal>
 
-      <View style={sharedStyles.card}>
-        <Text style={styles.heroValue}>
-          {Math.round(take.peakSpeedKmh)}
-          <Text style={styles.heroUnit}> km/h shot speed</Text>
-        </Text>
-        {take.distanceToGoalM !== null ? (
-          <Text style={[typography.subtitle, { marginTop: spacing.xs }]}>
-            Ball distance to goal line at contact:{' '}
-            {take.distanceToGoalM.toFixed(1)} m
-          </Text>
-        ) : null}
-      </View>
-
-      <View style={sharedStyles.card}>
-        <Text style={[typography.subtitle, { marginBottom: spacing.sm }]}>
-          Pose at contact
-        </Text>
-        <View
-          testID="pose-stage"
-          onLayout={(e) => setStageWidth(e.nativeEvent.layout.width)}
-          style={styles.stage}
-        >
-          <Text style={typography.label}>Contact freeze-frame</Text>
-          {pose && stageWidth > 0 ? (
-            <PoseOverlay
-              pose={pose}
-              videoWidth={video?.width ?? 1920}
-              videoHeight={video?.height ?? 1080}
-              viewWidth={stageWidth}
-              viewHeight={STAGE_HEIGHT}
-            />
+      <Reveal order={1} reduced={reduced}>
+        <Card style={styles.sectionCard}>
+          <StatTile
+            size="hero"
+            label="Peak shot speed"
+            value={speedValue}
+            unit="km/h"
+          />
+          {take.distanceToGoalM !== null ? (
+            <Text style={styles.distanceCaption}>
+              Ball distance to goal line at contact:{' '}
+              {take.distanceToGoalM.toFixed(1)} m
+            </Text>
           ) : null}
-        </View>
-        {take.jointAnglesAtContact ? (
-          <AngleTable table={take.jointAnglesAtContact} />
-        ) : (
-          <Text style={typography.label}>
-            No pose detected at the contact frame — joint angles unavailable.
+        </Card>
+      </Reveal>
+
+      <Reveal order={2} reduced={reduced}>
+        <Card style={styles.sectionCard}>
+          <Text style={[typography.subtitle, styles.cardHeading]}>
+            Pose at contact
           </Text>
-        )}
-      </View>
+          <View
+            testID="pose-stage"
+            onLayout={(e) => setStageWidth(e.nativeEvent.layout.width)}
+            style={styles.stage}
+          >
+            <Text style={typography.caption}>Contact freeze-frame</Text>
+            {pose && stageWidth > 0 ? (
+              <PoseOverlay
+                pose={pose}
+                videoWidth={video?.width ?? 1920}
+                videoHeight={video?.height ?? 1080}
+                viewWidth={stageWidth}
+                viewHeight={STAGE_HEIGHT}
+              />
+            ) : null}
+          </View>
+          {take.jointAnglesAtContact ? (
+            <AngleTable table={take.jointAnglesAtContact} />
+          ) : (
+            <Text style={typography.label}>
+              No pose detected at the contact frame — joint angles unavailable.
+            </Text>
+          )}
+        </Card>
+      </Reveal>
 
       {result.insights.length > 0 ? (
-        <View style={sharedStyles.card}>
-          <Text style={[typography.subtitle, { marginBottom: spacing.sm }]}>
+        <Card style={styles.sectionCard}>
+          <Text style={[typography.subtitle, styles.cardHeading]}>
             Take comparison
           </Text>
           {result.insights.map((insight) => (
             <Text
               key={insight}
-              style={[typography.body, { marginBottom: spacing.xs }]}
+              style={[typography.body, styles.insight]}
             >
               {insight}
             </Text>
           ))}
-        </View>
+        </Card>
       ) : null}
 
-      <Pressable
-        accessibilityRole="button"
+      <Button
+        label="Analyze another take"
         onPress={() => navigateSport(navigation, 'SoccerAnalyze')}
-        style={sharedStyles.button}
-      >
-        <Text style={sharedStyles.buttonText}>Analyze another take</Text>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
+        style={styles.cta}
+      />
+      <Button
+        label="Home"
+        variant="ghost"
         onPress={() => navigation.navigate('Home')}
-        style={[sharedStyles.button, styles.secondaryButton]}
-      >
-        <Text style={sharedStyles.buttonText}>Home</Text>
-      </Pressable>
+      />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  badge: {
-    alignSelf: 'flex-start',
-    borderWidth: 1.5,
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  badgeText: {
-    fontSize: 15,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  heroValue: {
-    fontSize: 48,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  heroUnit: {
-    fontSize: 18,
-    fontWeight: '600',
+  takeLabel: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
     color: colors.textMuted,
+    marginBottom: spacing.xs,
+  },
+  verdict: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '700',
+    letterSpacing: -0.56,
+    marginBottom: spacing.xs,
+  },
+  verdictDetail: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.textMuted,
+    marginBottom: spacing.md,
+  },
+  sectionCard: {
+    marginBottom: spacing.md,
+  },
+  distanceCaption: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+    color: colors.textMuted,
+    marginTop: spacing.sm,
+    fontVariant: ['tabular-nums'],
+  },
+  cardHeading: {
+    marginBottom: spacing.sm,
   },
   stage: {
     height: STAGE_HEIGHT,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
+    borderRadius: radii.lg,
+    backgroundColor: colors.stage,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
@@ -251,9 +354,9 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.borderSubtle,
   },
   tableJoint: {
     flex: 2,
@@ -262,7 +365,17 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'right',
   },
-  secondaryButton: {
-    backgroundColor: colors.surfaceRaised,
+  tableValue: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  insight: {
+    marginBottom: spacing.xs,
+  },
+  cta: {
+    marginBottom: spacing.sm,
   },
 });

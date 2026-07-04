@@ -3,6 +3,14 @@ import { render, screen } from '@testing-library/react-native';
 import { App } from '../App';
 import { modules } from '../registry';
 
+// App mounts a SafeAreaProvider; the package's jest mock provides inert
+// metrics so rendering never waits on native inset measurement.
+jest.mock('react-native-safe-area-context', () =>
+  jest.requireActual<{ default: unknown }>(
+    'react-native-safe-area-context/jest/mock',
+  ).default,
+);
+
 describe('App shell', () => {
   it('renders the navigator with the Home screen', () => {
     render(<App />);

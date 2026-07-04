@@ -12,6 +12,10 @@ import { PerfectedActionScreen } from '../PerfectedActionScreen';
 import { PerfectedResultsScreen } from '../PerfectedResultsScreen';
 import { buildPerfectedResult, demoMeasuredFrames } from '../../perfectedPipeline';
 
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
@@ -94,12 +98,14 @@ describe('PerfectedResultsScreen', () => {
 
     renderWithNav(<PerfectedResultsScreen />);
     expect(screen.getByText('Target joint angles at contact')).toBeTruthy();
-    expect(screen.getByText('Hip-knee')).toBeTruthy();
+    expect(screen.getByText('Shoulder–Hip')).toBeTruthy();
+    expect(screen.getByText('Hip–Knee')).toBeTruthy();
+    expect(screen.getByText('Knee–Ankle')).toBeTruthy();
     expect(screen.getAllByText(/Nunome/).length).toBeGreaterThan(0);
 
     fireEvent.press(screen.getByText('Export video'));
     await waitFor(() => {
-      expect(screen.getByText(/Exported \d+ frames/)).toBeTruthy();
+      expect(screen.getByText('Video exported. Ready to share.')).toBeTruthy();
     });
   });
 

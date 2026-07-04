@@ -12,8 +12,8 @@ import { ReviewScreen } from './screens/ReviewScreen';
 export const captureModule: AppModule = {
   name: 'capture',
   screens: [
-    { route: 'Record', component: RecordScreen, title: 'Record Swing' },
-    { route: 'Import', component: ImportScreen, title: 'Import Video' },
-    { route: 'Review', component: ReviewScreen, title: 'Review Clip' },
+    { route: 'Record', component: RecordScreen, title: 'Record swing' },
+    { route: 'Import', component: ImportScreen, title: 'Import video' },
+    { route: 'Review', component: ReviewScreen, title: 'Review clip' },
   ],
 };

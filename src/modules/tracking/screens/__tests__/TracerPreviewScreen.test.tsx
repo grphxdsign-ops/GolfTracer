@@ -11,6 +11,13 @@ import {
   cannedResult,
 } from '../../testutils/screenFixtures';
 
+jest.mock('react-native-safe-area-context', () => ({
+  ...jest.requireActual<typeof import('react-native-safe-area-context')>(
+    'react-native-safe-area-context',
+  ),
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+
 function CalibrationStub() {
   return <Text>CalibrationRouteStub</Text>;
 }
@@ -43,12 +50,33 @@ describe('TracerPreviewScreen', () => {
     renderPreview();
 
     expect(screen.getByTestId('tracer-stage')).toBeTruthy();
-    expect(screen.getByText('quality: high')).toBeTruthy();
+    expect(screen.getByText('High quality')).toBeTruthy();
     expect(screen.getByLabelText('Tracer color Red')).toBeTruthy();
     expect(screen.getByLabelText('Tracer color White')).toBeTruthy();
     expect(screen.getByText('Subtle')).toBeTruthy();
     expect(screen.getByText('Bold')).toBeTruthy();
+    expect(screen.getByText('Off')).toBeTruthy();
     expect(screen.getByText('Replay tracer')).toBeTruthy();
+  });
+
+  it.each([
+    ['medium', 'Medium quality'],
+    ['low', 'Low quality'],
+  ] as const)('badges %s-quality tracks as "%s"', (quality, label) => {
+    useSessionStore.getState().setVideo(cannedAsset(), cannedFrameSource());
+    useSessionStore.getState().setTrackingResult(cannedResult(quality));
+    renderPreview();
+    expect(screen.getByText(label)).toBeTruthy();
+  });
+
+  it('defaults the color preset to Orange', () => {
+    useSessionStore.getState().setVideo(cannedAsset(), cannedFrameSource());
+    useSessionStore.getState().setTrackingResult(cannedResult('high'));
+    renderPreview();
+    expect(
+      screen.getByLabelText('Tracer color Orange').props.accessibilityState
+        .selected,
+    ).toBe(true);
   });
 
   it('changes the selected color and glow presets', () => {

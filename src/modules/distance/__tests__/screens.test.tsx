@@ -15,6 +15,13 @@ import { ResultsScreen } from '../screens/ResultsScreen';
 import { useDistanceStore } from '../distanceStore';
 import { makeSyntheticDtlTrack } from './helpers/syntheticDtl';
 
+jest.mock('react-native-safe-area-context', () => ({
+  ...jest.requireActual<typeof import('react-native-safe-area-context')>(
+    'react-native-safe-area-context',
+  ),
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');

@@ -7,7 +7,7 @@
  * pipeline.
  */
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -16,7 +16,15 @@ import type { FrameSource, VideoAsset } from '../../../types/media';
 import type { MediaPickerAdapter } from '../../../adapters/media/MediaPickerAdapter';
 import { ImagePickerAdapter } from '../../../adapters/media/ImagePickerAdapter';
 import { NativeFrameSource } from '../../../adapters/frames/NativeFrameSource';
-import { colors, radii, sharedStyles, spacing, typography } from '../../../app/theme';
+import { colors, spacing, typography } from '../../../app/theme';
+import {
+  Badge,
+  Button,
+  Card,
+  ScreenHeader,
+  SectionLabel,
+  SegmentedControl,
+} from '../../../app/components';
 import { validateImportedVideo, type ValidationIssue } from '../logic/validation';
 import { useCaptureStore } from '../logic/captureStore';
 
@@ -43,6 +51,12 @@ export const SOURCE_RATES = [
   { label: '240 fps slo-mo', recordedFps: 240 },
 ] as const;
 
+const IMPORT_TIPS = [
+  'Filmed from ~6 paces behind the golfer, sky-heavy framing.',
+  '1.5–60 seconds long, 24 fps or higher, HDR off.',
+  'Keeps rolling 8+ seconds after impact.',
+] as const;
+
 let importCounter = 0;
 
 export function ImportScreen({ picker, createFrameSource }: ImportScreenProps) {
@@ -58,6 +72,10 @@ export function ImportScreen({ picker, createFrameSource }: ImportScreenProps) {
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [sourceRate, setSourceRate] = useState<number | undefined>(undefined);
+
+  const selectedRateLabel = (
+    SOURCE_RATES.find((rate) => rate.recordedFps === sourceRate) ?? SOURCE_RATES[0]
+  ).label;
 
   const pick = async () => {
     setBusy(true);
@@ -110,124 +128,138 @@ export function ImportScreen({ picker, createFrameSource }: ImportScreenProps) {
   };
 
   return (
-    <View style={sharedStyles.screen}>
-      <Text style={[typography.title, { marginBottom: spacing.xs }]}>
-        Import a swing video
-      </Text>
-      <Text style={[typography.subtitle, { marginBottom: spacing.lg }]}>
-        Slow-motion clips (120/240 fps) give the best tracer.
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <ScreenHeader
+        title="Import a swing video"
+        subtitle="Slow-motion clips (120/240 fps) give the best tracer."
+      />
+
+      <SectionLabel style={styles.firstSection}>Recorded frame rate</SectionLabel>
+      <SegmentedControl
+        options={SOURCE_RATES.map((rate) => ({
+          label: rate.label,
+          value: rate.label,
+        }))}
+        value={selectedRateLabel}
+        onChange={(value) =>
+          setSourceRate(
+            SOURCE_RATES.find((rate) => rate.label === value)?.recordedFps,
+          )
+        }
+        testID="import-source-rate"
+      />
+      <Text style={styles.rateHint}>
+        Photo libraries don&apos;t report slow-motion frame rates, so this keeps
+        the ball tracking on the real time base.
       </Text>
 
-      <View style={[sharedStyles.card, { marginBottom: spacing.lg }]}>
-        <Text style={[typography.label, { marginBottom: spacing.xs }]}>
-          How was the clip filmed?
-        </Text>
-        <View style={styles.segmentRow}>
-          {SOURCE_RATES.map((rate) => {
-            const selected = rate.recordedFps === sourceRate;
-            return (
-              <Pressable
-                key={rate.label}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => setSourceRate(rate.recordedFps)}
-                style={[styles.segment, selected && styles.segmentSelected]}
-              >
-                <Text
-                  style={[styles.segmentText, selected && styles.segmentTextSelected]}
-                >
-                  {rate.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Text style={[typography.label, { marginTop: spacing.sm }]}>
-          Photo libraries don&apos;t report slow-motion frame rates, so this
-          keeps the ball tracking on the real time base.
-        </Text>
-      </View>
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ disabled: busy }}
-        disabled={busy}
+      <Button
+        label="Choose video"
         onPress={() => {
           void pick();
         }}
-        style={[sharedStyles.button, busy && sharedStyles.buttonDisabled]}
-      >
-        <Text
-          style={[sharedStyles.buttonText, busy && sharedStyles.buttonTextDisabled]}
-        >
-          {busy ? 'Opening library…' : 'Choose video'}
-        </Text>
-      </Pressable>
+        loading={busy}
+        loadingLabel="Opening library…"
+        testID="import-choose-video"
+        style={styles.chooseButton}
+      />
 
       {error !== null && (
-        <View style={sharedStyles.card}>
-          <Text style={[typography.body, { color: colors.danger }]}>{error}</Text>
-        </View>
+        <Card style={styles.feedbackCard} testID="import-error">
+          <Badge label="Import failed" tone="danger" />
+          <Text style={styles.errorMessage}>{error}</Text>
+        </Card>
       )}
 
       {issues.length > 0 && (
-        <View style={sharedStyles.card}>
-          <Text style={[typography.label, { marginBottom: spacing.xs }]}>
-            This video can&apos;t be analyzed
+        <Card padded={false} style={styles.feedbackCard} testID="import-issues">
+          <Text style={styles.issuesTitle}>
+            Why this video won&apos;t work
           </Text>
           {issues.map((issue) => (
-            <Text
-              key={issue.code}
-              style={[typography.body, { color: colors.danger, marginBottom: spacing.xs }]}
-            >
-              • {issue.message}
-            </Text>
+            <View key={issue.code} style={styles.issueRow}>
+              <Text style={styles.issueMessage}>{issue.message}</Text>
+            </View>
           ))}
-        </View>
+        </Card>
       )}
 
-      <View style={sharedStyles.card}>
-        <Text style={[typography.label, { marginBottom: spacing.xs }]}>
-          What works best
-        </Text>
-        <Text style={[typography.body, { marginBottom: spacing.xs }]}>
-          • Filmed from ~6 paces behind the golfer, sky-heavy framing.
-        </Text>
-        <Text style={[typography.body, { marginBottom: spacing.xs }]}>
-          • 1.5–60 seconds long, 24 fps or higher, HDR off.
-        </Text>
-        <Text style={typography.body}>
-          • Keeps rolling 8+ seconds after impact.
-        </Text>
-      </View>
-    </View>
+      <SectionLabel>What works best</SectionLabel>
+      <Card padded={false}>
+        {IMPORT_TIPS.map((tip, index) => (
+          <View
+            key={tip}
+            style={[styles.tipRow, index > 0 && styles.tipRowDivider]}
+          >
+            <Text style={typography.body}>{tip}</Text>
+          </View>
+        ))}
+      </Card>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  segmentRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  segment: {
+  screen: {
     flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.background,
   },
-  segmentSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.accent,
+  content: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
   },
-  segmentText: {
+  firstSection: {
+    marginTop: 0,
+  },
+  rateHint: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
     color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: '600',
+    marginTop: spacing.sm,
   },
-  segmentTextSelected: {
+  chooseButton: {
+    marginTop: spacing.lg,
+  },
+  feedbackCard: {
+    marginTop: spacing.md,
+  },
+  errorMessage: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
     color: colors.text,
+    marginTop: spacing.sm,
+  },
+  issuesTitle: {
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+    color: colors.text,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  issueRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderSubtle,
+  },
+  issueMessage: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.text,
+  },
+  tipRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  tipRowDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderSubtle,
   },
 });

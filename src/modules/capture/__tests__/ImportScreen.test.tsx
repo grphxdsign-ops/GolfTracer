@@ -121,6 +121,8 @@ describe('ImportScreen', () => {
     render(<ImportScreen picker={picker} />);
     pressChoose();
     expect(await screen.findByText('Photos permission denied')).toBeTruthy();
+    expect(screen.getByTestId('import-error')).toBeTruthy();
+    expect(screen.getByText('Import failed')).toBeTruthy();
   });
 
   it('does nothing on cancel', async () => {

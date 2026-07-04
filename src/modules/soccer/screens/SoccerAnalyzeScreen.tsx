@@ -3,13 +3,24 @@
  * shot analysis (tracking → goal anchor → 3D ball world → speed → goal
  * cross → pose at contact) with live progress, publishes the result to the
  * sports session store, and auto-navigates to the soccer results.
+ *
+ * Mirrors the golf AnalyzeScreen structure for family consistency:
+ * empty → EmptyState, running → staged ProgressBar, error → specific tips
+ * with a single retry CTA (DESIGN.md §1: blame-free copy with a next step).
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useSessionStore } from '../../../state/sessionStore';
-import { colors, radii, sharedStyles, spacing, typography } from '../../../app/theme';
+import { colors, sharedStyles, spacing, typography } from '../../../app/theme';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ProgressBar,
+  ScreenHeader,
+} from '../../../app/components';
 import { useSportsSessionStore } from '../../sports/sportsSessionStore';
 import { navigateSport } from '../../sports/navSport';
 import { analyzeSoccerTake } from '../analysis/analyzeSoccerShot';
@@ -21,6 +32,18 @@ const RETRY_TIPS = [
   'Keep all four goal corners visible in the frame.',
   'Use the highest frame rate your phone supports (120/240fps).',
 ];
+
+/** Staged progress captions, in pipeline order (DESIGN.md §5: state, not spin). */
+const PROGRESS_STAGES = [
+  { until: 0.35, caption: 'Tracking the ball flight' },
+  { until: 0.7, caption: 'Anchoring the goal frame' },
+  { until: Number.POSITIVE_INFINITY, caption: 'Measuring speed and pose at contact' },
+] as const;
+
+function stageCaption(progress: number): string {
+  const stage = PROGRESS_STAGES.find((s) => progress < s.until);
+  return (stage ?? PROGRESS_STAGES[PROGRESS_STAGES.length - 1]!).caption;
+}
 
 export function SoccerAnalyzeScreen() {
   const navigation = useNavigation();
@@ -67,10 +90,10 @@ export function SoccerAnalyzeScreen() {
   if (!frameSource) {
     return (
       <View style={sharedStyles.centered}>
-        <Text style={typography.title}>No video loaded</Text>
-        <Text style={[typography.subtitle, { marginTop: spacing.sm }]}>
-          Record or import a soccer shot first, then come back to analyze it.
-        </Text>
+        <EmptyState
+          title="No video loaded"
+          body="Record or import a soccer shot first, then come back to analyze it."
+        />
       </View>
     );
   }
@@ -78,26 +101,18 @@ export function SoccerAnalyzeScreen() {
   if (error) {
     return (
       <View style={sharedStyles.screen}>
-        <Text style={typography.title}>Couldn&apos;t analyze that shot</Text>
-        <Text
-          style={[typography.body, { marginVertical: spacing.md, color: colors.danger }]}
-        >
-          {error}
-        </Text>
-        <View style={sharedStyles.card}>
-          {RETRY_TIPS.map((tip) => (
-            <Text key={tip} style={[typography.body, { marginBottom: spacing.xs }]}>
-              {'•'} {tip}
-            </Text>
+        <ScreenHeader title="Couldn't analyze that shot" subtitle={error} />
+        <Card padded={false} style={styles.tipsCard}>
+          {RETRY_TIPS.map((tip, index) => (
+            <View
+              key={tip}
+              style={[styles.tipRow, index > 0 && styles.tipRowDivider]}
+            >
+              <Text style={typography.body}>{tip}</Text>
+            </View>
           ))}
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={retry}
-          style={sharedStyles.button}
-        >
-          <Text style={sharedStyles.buttonText}>Retry analysis</Text>
-        </Pressable>
+        </Card>
+        <Button label="Retry analysis" onPress={retry} />
       </View>
     );
   }
@@ -105,29 +120,47 @@ export function SoccerAnalyzeScreen() {
   const pct = Math.round(progress * 100);
   return (
     <View style={sharedStyles.centered}>
-      <Text style={typography.title}>Analyzing shot…</Text>
-      <Text style={[typography.subtitle, { marginVertical: spacing.md }]}>{pct}%</Text>
-      <View
-        accessibilityRole="progressbar"
-        style={{
-          width: '80%',
-          height: 8,
-          borderRadius: radii.sm,
-          backgroundColor: colors.surfaceRaised,
-          overflow: 'hidden',
-        }}
-      >
-        <View
-          style={{
-            width: `${pct}%`,
-            height: '100%',
-            backgroundColor: colors.accent,
-          }}
-        />
-      </View>
-      <Text style={[typography.label, { marginTop: spacing.md }]}>
-        Tracking ball, anchoring goal, measuring speed…
-      </Text>
+      <Text style={typography.heading}>Analyzing the shot</Text>
+      <Text style={styles.pct}>{pct}%</Text>
+      <ProgressBar
+        progress={progress}
+        accessibilityLabel="Soccer shot analysis progress"
+        style={styles.bar}
+      />
+      <Text style={styles.stageCaption}>{stageCaption(progress)}</Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  tipsCard: {
+    marginBottom: spacing.lg,
+  },
+  tipRow: {
+    paddingVertical: spacing.sm + spacing.xs,
+    paddingHorizontal: spacing.md,
+  },
+  tipRowDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderSubtle,
+  },
+  pct: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  bar: {
+    alignSelf: 'stretch',
+  },
+  stageCaption: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+    color: colors.textMuted,
+    marginTop: spacing.md,
+  },
+});

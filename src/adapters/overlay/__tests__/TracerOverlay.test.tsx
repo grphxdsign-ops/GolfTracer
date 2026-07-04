@@ -1,11 +1,11 @@
 import { render } from '@testing-library/react-native';
 import { Canvas } from '@shopify/react-native-skia';
 
-import { TracerOverlay } from '../TracerOverlay';
+import { cometTints, TracerOverlay } from '../TracerOverlay';
 import type { TracerPath, TrackPoint } from '../../../types/tracking';
 import { DEFAULT_TRACER_STYLE } from '../../../modules/tracking/tracker/tracerGeometry';
 
-function tracerOf(count: number): TracerPath {
+function tracerOf(count: number, apexIndex = count - 1): TracerPath {
   const points: TrackPoint[] = [];
   for (let i = 0; i < count; i++) {
     points.push({
@@ -15,7 +15,7 @@ function tracerOf(count: number): TracerPath {
       interpolated: false,
     });
   }
-  return { points, apexIndex: count - 1, style: { ...DEFAULT_TRACER_STYLE } };
+  return { points, apexIndex, style: { ...DEFAULT_TRACER_STYLE } };
 }
 
 /**
@@ -52,6 +52,36 @@ function strokeElements(
   return canvasChildProps(result).filter((p) => 'path' in p);
 }
 
+/** The core comet stroke — identified by its strokeWidth, not position. */
+function coreStroke(result: ReturnType<typeof render>): Record<string, unknown> {
+  const core = strokeElements(result).find(
+    (p) => p.strokeWidth === DEFAULT_TRACER_STYLE.strokeWidth,
+  );
+  expect(core).toBeTruthy();
+  return core!;
+}
+
+function circles(
+  result: ReturnType<typeof render>,
+): Array<Record<string, unknown>> {
+  return canvasChildProps(result).filter((p) => 'cx' in p);
+}
+
+const HEAD_RADIUS = Math.max(2.5, DEFAULT_TRACER_STYLE.strokeWidth * 1.3);
+const HEAD_TINT = cometTints(DEFAULT_TRACER_STYLE.color).head;
+
+function headMarker(result: ReturnType<typeof render>): Record<string, unknown> {
+  const head = circles(result).find((p) => p.r === HEAD_RADIUS);
+  expect(head).toBeTruthy();
+  return head!;
+}
+
+function apexRing(
+  result: ReturnType<typeof render>,
+): Record<string, unknown> | undefined {
+  return circles(result).find((p) => p.style === 'stroke');
+}
+
 const baseProps = {
   videoWidth: 480,
   videoHeight: 270,
@@ -59,40 +89,135 @@ const baseProps = {
   viewHeight: 270,
 } as const;
 
+describe('cometTints', () => {
+  it('derives head/mid/tail tints from a hex preset color', () => {
+    const tints = cometTints('#FF3B1F');
+    expect(tints.mid).toBe('#FF3B1F');
+    // head = each channel mixed 65% toward white.
+    expect(tints.head).toBe('#FFBAB1');
+    // tail = the color at 55% alpha.
+    expect(tints.tail).toBe('rgba(255, 59, 31, 0.55)');
+  });
+
+  it('supports shorthand hex and pure white', () => {
+    expect(cometTints('#fff')).toEqual({
+      head: '#FFFFFF',
+      mid: '#fff',
+      tail: 'rgba(255, 255, 255, 0.55)',
+    });
+  });
+
+  it('degrades non-hex input to the input color for every stop', () => {
+    expect(cometTints('tomato')).toEqual({
+      head: 'tomato',
+      mid: 'tomato',
+      tail: 'tomato',
+    });
+  });
+});
+
 describe('TracerOverlay', () => {
-  it('draws a glow stroke under a solid core stroke with round caps', () => {
+  it('draws glow, gradient core, and hot head segment strokes with round caps', () => {
     const result = render(<TracerOverlay tracer={tracerOf(10)} {...baseProps} />);
     const strokes = strokeElements(result);
-    expect(strokes).toHaveLength(2);
-    const [glow, core] = strokes;
-    expect(glow!.color).toBe(DEFAULT_TRACER_STYLE.glowColor);
-    expect(core!.color).toBe(DEFAULT_TRACER_STYLE.color);
-    expect(glow!.strokeWidth as number).toBeGreaterThan(
-      core!.strokeWidth as number,
+    // Glow + core + head segment.
+    expect(strokes).toHaveLength(3);
+
+    const glow = strokes.find(
+      (p) => p.strokeWidth === DEFAULT_TRACER_STYLE.glowWidth * 1.6,
+    )!;
+    expect(glow).toBeTruthy();
+    expect(glow.color).toBe(DEFAULT_TRACER_STYLE.glowColor);
+    expect(glow.strokeCap).toBe('round');
+    // Glow is blurred via a BlurMask child.
+    const blur = canvasChildProps(result).find((p) => 'blur' in p)!;
+    expect(blur.blur).toBe(6);
+
+    const core = coreStroke(result);
+    expect(core.color).toBe(DEFAULT_TRACER_STYLE.color);
+    expect((glow.strokeWidth as number) > (core.strokeWidth as number)).toBe(
+      true,
     );
-    expect(glow!.strokeCap).toBe('round');
-    expect(core!.strokeCap).toBe('round');
+    expect(core.strokeCap).toBe('round');
     // Identity mapping (view == video): path starts at the first point.
-    const svg = (core!.path as { toSVGString(): string }).toSVGString();
+    const svg = (core.path as { toSVGString(): string }).toSVGString();
     expect(svg.startsWith('M 10 200')).toBe(true);
     expect(svg.split('L').length).toBe(10); // moveTo + 9 lineTo
 
-    // Animated head circle at the last visible point.
-    const head = canvasChildProps(result).find((p) => 'cx' in p)!;
+    // Hot head segment: last 6 points, restroked wider in the head tint.
+    const headSegment = strokes.find(
+      (p) => p.strokeWidth === DEFAULT_TRACER_STYLE.strokeWidth * 1.4,
+    )!;
+    expect(headSegment).toBeTruthy();
+    expect(headSegment.color).toBe(HEAD_TINT);
+    const segSvg = (
+      headSegment.path as { toSVGString(): string }
+    ).toSVGString();
+    expect(segSvg.split('L').length).toBe(6); // moveTo + 5 lineTo
+
+    // Head marker at the last visible point: soft under-circle + solid dot.
+    const head = headMarker(result);
     expect(head.cx).toBe(10 + 9 * 4);
     expect(head.cy).toBe(200 - 9 * 3);
+    expect(head.color).toBe(HEAD_TINT);
+    const under = circles(result).find((p) => p.r === HEAD_RADIUS * 2.2)!;
+    expect(under).toBeTruthy();
+    expect(under.color).toBe(DEFAULT_TRACER_STYLE.glowColor);
+    expect(under.cx).toBe(head.cx);
+  });
+
+  it('paints the core with a tail→head gradient of three tints', () => {
+    const result = render(<TracerOverlay tracer={tracerOf(10)} {...baseProps} />);
+    const gradient = canvasChildProps(result).find((p) => 'colors' in p)!;
+    expect(gradient).toBeTruthy();
+    const tints = cometTints(DEFAULT_TRACER_STYLE.color);
+    expect(gradient.colors).toEqual([tints.tail, tints.mid, tints.head]);
+    expect(gradient.positions).toEqual([0, 0.55, 1]);
+    // Anchored tail (first revealed point) → head (last revealed point).
+    expect(gradient.start).toEqual({ x: 10, y: 200 });
+    expect(gradient.end).toEqual({ x: 10 + 9 * 4, y: 200 - 9 * 3 });
   });
 
   it('reveals only the first k(t) points, anchored to timestamps', () => {
     const result = render(
       <TracerOverlay tracer={tracerOf(10)} {...baseProps} revealFraction={0.5} />,
     );
-    const strokes = strokeElements(result);
-    const svg = (strokes[1]!.path as { toSVGString(): string }).toSVGString();
+    const svg = (
+      coreStroke(result).path as { toSVGString(): string }
+    ).toSVGString();
     // t=45 → 5 points visible (timestamps 0..40) → 4 line segments.
     expect(svg.split('L').length).toBe(5);
-    const head = canvasChildProps(result).find((p) => 'cx' in p)!;
+    const head = headMarker(result);
     expect(head.cx).toBe(10 + 4 * 4);
+  });
+
+  it('shows the apex ring only once the reveal passes apexIndex', () => {
+    // Apex at index 5; half reveal shows 5 points (k=5, not past the apex).
+    const early = render(
+      <TracerOverlay
+        tracer={tracerOf(10, 5)}
+        {...baseProps}
+        revealFraction={0.5}
+      />,
+    );
+    expect(apexRing(early)).toBeUndefined();
+
+    const full = render(<TracerOverlay tracer={tracerOf(10, 5)} {...baseProps} />);
+    const ring = apexRing(full)!;
+    expect(ring).toBeTruthy();
+    expect(ring.cx).toBe(10 + 5 * 4);
+    expect(ring.cy).toBe(200 - 5 * 3);
+    expect(ring.r).toBe(5);
+    expect(ring.strokeWidth).toBe(3);
+    expect(ring.color).toBe(HEAD_TINT);
+    expect(ring.opacity).toBeCloseTo(0.9);
+  });
+
+  it('guards an out-of-bounds apexIndex', () => {
+    const result = render(
+      <TracerOverlay tracer={tracerOf(10, 99)} {...baseProps} />,
+    );
+    expect(apexRing(result)).toBeUndefined();
   });
 
   it('renders nothing before two points are visible', () => {
@@ -113,8 +238,10 @@ describe('TracerOverlay', () => {
     tracer.style.glowWidth = 0;
     const result = render(<TracerOverlay tracer={tracer} {...baseProps} />);
     const strokes = strokeElements(result);
-    expect(strokes).toHaveLength(1);
-    expect(strokes[0]!.color).toBe(DEFAULT_TRACER_STYLE.color);
+    // Core + head segment only.
+    expect(strokes).toHaveLength(2);
+    expect(coreStroke(result).color).toBe(DEFAULT_TRACER_STYLE.color);
+    expect(canvasChildProps(result).find((p) => 'blur' in p)).toBeUndefined();
   });
 
   it('maps points through the letterbox for rotated video', () => {
@@ -132,8 +259,9 @@ describe('TracerOverlay', () => {
         viewHeight={100}
       />,
     );
-    const strokes = strokeElements(result);
-    const svg = (strokes[1]!.path as { toSVGString(): string }).toSVGString();
+    const svg = (
+      coreStroke(result).path as { toSVGString(): string }
+    ).toSVGString();
     // (0,50) → (0,0); (100,0) → (50,100).
     expect(svg).toBe('M 0 0 L 50 100');
   });

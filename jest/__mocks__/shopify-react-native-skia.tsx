@@ -16,6 +16,10 @@ export const Circle = NullComponent;
 export const Line = NullComponent;
 export const Paint = NullComponent;
 export const BlurMask = NullComponent;
+export const LinearGradient = NullComponent;
+export const RadialGradient = NullComponent;
+
+export const vec = (x: number, y: number) => ({ x, y });
 
 export interface SkPathStub {
   moveTo(x: number, y: number): SkPathStub;
