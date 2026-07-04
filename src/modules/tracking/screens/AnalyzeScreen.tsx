@@ -33,6 +33,7 @@ import {
   EmptyState,
   ProgressBar,
   ScreenHeader,
+  TracerLoader,
 } from '../../../app/components';
 import { runTracking, type RunTrackingOptions } from '../tracker/pipeline';
 import { useBallPointStore } from './ballPointStore';
@@ -268,6 +269,7 @@ export function AnalyzeScreen() {
   return (
     <View style={sharedStyles.centered}>
       <View style={styles.runningColumn}>
+        <TracerLoader size={128} testID="analyze-loader" />
         <Text style={[typography.heading, styles.runningTitle]}>
           Tracking ball flight
         </Text>
@@ -349,6 +351,7 @@ const styles = StyleSheet.create({
   },
   runningTitle: {
     textAlign: 'center',
+    marginTop: spacing.sm,
     marginBottom: spacing.lg,
   },
   runningBar: {

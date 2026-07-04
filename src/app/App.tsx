@@ -18,6 +18,7 @@ import type { RootStackParamList } from '../types/navigation';
 import { useProfileStore } from '../state/profileStore';
 import { modules } from './registry';
 import { HomeScreen } from './screens/HomeScreen';
+import { TracerLoader } from './components';
 import { colors, navigationTheme } from './theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -99,9 +100,11 @@ export function App() {
           </Stack.Navigator>
         </NavigationContainer>
       ) : (
-        // Plain background while the profile hydrates — a blank beat, never
-        // the wrong screen.
-        <View style={styles.hydrating} />
+        // While the profile hydrates, the tracer draws itself on the launch
+        // screen instead of the wrong screen or a blank beat.
+        <View style={styles.hydrating}>
+          <TracerLoader size={132} testID="launch-loader" />
+        </View>
       )}
     </SafeAreaProvider>
   );
@@ -111,5 +114,7 @@ const styles = StyleSheet.create({
   hydrating: {
     flex: 1,
     backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

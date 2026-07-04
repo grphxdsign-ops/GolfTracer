@@ -37,14 +37,25 @@ Brand: the app is **Tracr** (display name; internal RN project name stays
 
 ### 1.1 The mark
 
-The logomark (master: `docs/brand/logomark-master.png`) is an ember comet
-crescent — **the logomark IS the tracer**, not a separate brand element.
-Its gradient is the §2 ember palette verbatim: white-gold head `#FFE9C4` →
-amber `#FF9E2C` → ember tail `#FF4D00` over the `rgba(255,122,26,0.35)`
-glow (master sampled at `#FEF08A → #FEC339 → #FE7402`, same family — the
-tokens are the canonical values). One artwork, two renderers: marketing
-uses the master asset; in-app surfaces draw the `TracerMark` kit component
-from the tracer tokens so the mark can never drift from the product.
+The logomark (master: `docs/brand/logomark-master.png`) is a ball-flight
+tracer arc — **the logomark IS the tracer**, not a separate brand element:
+a white-hot ball at the head of an ember trail curving back to the impact
+bulb. Its gradient is the §2 ember palette verbatim: white-gold head
+`#FFE9C4` → amber `#FF9E2C` → ember tail `#FF4D00` over the
+`rgba(255,122,26,0.35)` glow (master sampled at `#FEF08A → #FEC339 →
+#FE7402`, same family — the tokens are the canonical values). One artwork,
+two renderers: marketing uses the master asset; in-app surfaces draw the
+`TracerMark` kit component from the tracer tokens so the mark can never
+drift from the product.
+
+**The loader is the mark in motion.** Every loading moment (app launch,
+shot analysis — never a generic spinner, §8) renders `TracerLoader`: a ball
+is hit and flies out along the arc drawing the ember gradient head-first,
+then the whole trail fades away and loops — watching shot after shot. Same
+tokens, same geometry (`tracerArc.ts`) as the static mark, so it is
+literally the logo drawing itself. Ball position and mark opacity animate
+on the native driver (no per-frame JS); reduce-motion shows the static
+mark. The loader obeys the same staging and ember-quota rules below.
 
 Rules:
 - **Staging.** In-product the mark sits on `colors.stage` or

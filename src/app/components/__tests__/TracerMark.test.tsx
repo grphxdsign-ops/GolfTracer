@@ -62,6 +62,10 @@ describe('TracerMark', () => {
       (e) => e.type === Path && e.props.color === tracer.glow,
     );
     expect(glowPath).toBeTruthy();
+
+    // A white-hot ball marks the head — the tracer's leading edge.
+    const ballHead = els.find((e) => e.props.color === tracer.head);
+    expect(ballHead).toBeTruthy();
   });
 
   it('never borrows chrome colors — ember only (DESIGN.md §1.1)', () => {
