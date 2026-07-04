@@ -36,6 +36,8 @@ export { SportTile } from './SportTile';
 export type { SportTileProps } from './SportTile';
 export { StatTile } from './StatTile';
 export type { StatTileProps } from './StatTile';
+export { TracerMark } from './TracerMark';
+export type { TracerMarkProps } from './TracerMark';
 export { TrendPill } from './TrendPill';
 export type { TrendPillProps } from './TrendPill';
 export { useReducedMotion } from './useReducedMotion';

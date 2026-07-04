@@ -35,6 +35,33 @@ Brand: the app is **Tracr** (display name; internal RN project name stays
   explanation and a next step ("Couldn't track that shot. Mark the ball to
   help." — never "Oops, something went wrong").
 
+### 1.1 The mark
+
+The logomark (master: `docs/brand/logomark-master.png`) is an ember comet
+crescent — **the logomark IS the tracer**, not a separate brand element.
+Its gradient is the §2 ember palette verbatim: white-gold head `#FFE9C4` →
+amber `#FF9E2C` → ember tail `#FF4D00` over the `rgba(255,122,26,0.35)`
+glow (master sampled at `#FEF08A → #FEC339 → #FE7402`, same family — the
+tokens are the canonical values). One artwork, two renderers: marketing
+uses the master asset; in-app surfaces draw the `TracerMark` kit component
+from the tracer tokens so the mark can never drift from the product.
+
+Rules:
+- **Staging.** In-product the mark sits on `colors.stage` or
+  `colors.background` — never pure `#000` (§8). The master's black canvas
+  is for marketing/app-icon export only; even the app icon re-stages onto
+  `colors.stage` (#0A0E07) so icon and product share a field.
+- **Ember quota.** The mark counts as the screen's ember element (§2:
+  ember is video-stage-only, one hot element per screen). It may appear on
+  screens with no live tracer — Welcome/SignIn, the app icon, at most an
+  empty state — and never as repeated chrome ornament, never beside a
+  playing tracer.
+- **Never recolored.** Course green is the UI's voice; ember is the shot's.
+  The mark is never rendered in `primary`/`accent`, and chrome never
+  borrows the ember gradient (§8 unchanged). Monochrome-only contexts use
+  `colors.text` warm cream.
+- Clearspace ≥ 0.5× mark height on all sides; minimum rendered size 24pt.
+
 ---
 
 ## 2. Color tokens
