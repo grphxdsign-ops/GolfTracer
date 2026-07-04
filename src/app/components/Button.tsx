@@ -1,21 +1,25 @@
 /**
- * Button — docs/DESIGN.md §7 (kit inventory) and §5 (press motion).
+ * Button — docs/DESIGN.md §7 (kit inventory) and §5 (press pop, the
+ * Framer-grade sanctioned exception).
  *
  * Pill CTA with primary / secondary / ghost / danger variants, three sizes,
- * Animated press scale (0.97, reduce-motion aware), and loading/disabled
- * states. The visible label is the accessible name.
+ * a two-beat asymmetric press (timing down, spring back up with one
+ * overshoot), a brand glow on the primary fill that flattens while pressed,
+ * and loading/disabled states. The visible label is the accessible name.
+ * Reduce-motion: no scale, color swap only.
  */
 import { useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Easing,
   Pressable,
   StyleSheet,
   Text,
 } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
-import { colors, motion, radii, spacing } from '../theme';
+import { colors, radii, spacing } from '../theme';
 import { useReducedMotion } from './useReducedMotion';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -78,14 +82,30 @@ export function Button({
   const palette = variantColors[variant];
   const inactive = disabled || loading;
 
-  const animateScale = (toValue: number) => {
+  // Press pop (DESIGN.md §5): press-in is a quick ease-out timing — never a
+  // spring on the way down; release is a spring with exactly one ~0.3%
+  // overshoot. Reduce-motion skips the scale entirely (color swap only).
+  const pressIn = () => {
     if (reducedMotion) {
       return;
     }
     Animated.timing(scale, {
-      toValue,
-      duration: motion.duration.press,
-      easing: motion.easing.standard,
+      toValue: 0.97,
+      duration: 90,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const pressOut = () => {
+    if (reducedMotion) {
+      return;
+    }
+    Animated.spring(scale, {
+      toValue: 1,
+      stiffness: 400,
+      damping: 22,
+      mass: 1,
       useNativeDriver: true,
     }).start();
   };
@@ -104,12 +124,15 @@ export function Button({
         // matching Chip's approach; lg/md already meet 44pt visually.
         hitSlop={size === 'sm' ? { top: 4, bottom: 4 } : undefined}
         onPress={onPress}
-        onPressIn={() => animateScale(0.97)}
-        onPressOut={() => animateScale(1)}
+        onPressIn={pressIn}
+        onPressOut={pressOut}
         style={({ pressed }) => [
           styles.base,
           sizeStyles[size],
           variant === 'secondary' && styles.secondaryBorder,
+          // Primary CTA carries the brand glow; pressed = flatten (glow
+          // collapses, fill darkens one step) — DESIGN.md §5.
+          variant === 'primary' && !pressed && !inactive && styles.primaryGlow,
           { backgroundColor: pressed ? palette.bgPressed : palette.bg },
           inactive && styles.inactive,
         ]}
@@ -153,6 +176,13 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
+  primaryGlow: {
+    shadowColor: colors.primary,
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
   inactive: {
     opacity: 0.4,
   },
@@ -165,13 +195,13 @@ const styles = StyleSheet.create({
 });
 
 const sizeStyles = StyleSheet.create({
-  lg: { height: 52, paddingHorizontal: spacing.lg },
+  lg: { height: 52, paddingHorizontal: spacing.lg + 2 },
   md: { height: 44, paddingHorizontal: spacing.md },
   sm: { height: 36, paddingHorizontal: spacing.md },
 });
 
 const labelSizeStyles = StyleSheet.create({
-  lg: { fontSize: 16 },
+  lg: { fontSize: 17 },
   md: { fontSize: 15 },
   sm: { fontSize: 13 },
 });

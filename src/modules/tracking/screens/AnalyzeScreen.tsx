@@ -60,6 +60,15 @@ const RETRY_TIPS = [
 /** Aspect-correct placeholder box the user taps to mark the ball. */
 const BALL_BOX_HEIGHT = 180;
 
+/** The product promise (DESIGN §12): tracking adapts to finish inside 3 s. */
+const TIME_BUDGET_MS = 3000;
+
+/**
+ * Wall-clock past which the caption stops claiming staged progress and owns
+ * up — slightly over the budget so the adapted common case never sees it.
+ */
+const LONG_CLIP_AFTER_MS = 3500;
+
 /** Staged caption under the progress bar, keyed off pipeline progress. */
 function stageCaption(progress: number): string {
   if (progress < 0.4) return 'Reading frames…';
@@ -79,6 +88,7 @@ export function AnalyzeScreen() {
   const [progress, setProgress] = useState(0);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [longClip, setLongClip] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -87,12 +97,17 @@ export function AnalyzeScreen() {
     setProgress(0);
     setFailed(false);
     setError(null);
+    setLongClip(false);
     setTrackingStatus('running');
+    const longClipTimer = setTimeout(() => {
+      if (!cancelled) setLongClip(true);
+    }, LONG_CLIP_AFTER_MS);
 
     (async () => {
       try {
         const trackingOptions: AnalyzeTrackingOptions = {
           ballPoint: ballPoint ?? undefined,
+          timeBudgetMs: TIME_BUDGET_MS,
           onProgress: (p) => {
             if (!cancelled) setProgress(p);
           },
@@ -110,11 +125,14 @@ export function AnalyzeScreen() {
         const message = e instanceof Error ? e.message : String(e);
         setTrackingStatus('error', message);
         setError(message);
+      } finally {
+        clearTimeout(longClipTimer);
       }
     })();
 
     return () => {
       cancelled = true;
+      clearTimeout(longClipTimer);
     };
   }, [
     frameSource,
@@ -259,7 +277,7 @@ export function AnalyzeScreen() {
           style={styles.runningBar}
         />
         <Text style={[typography.label, styles.runningCaption]}>
-          {stageCaption(progress)}
+          {longClip ? 'Still working — long clip' : stageCaption(progress)}
         </Text>
       </View>
     </View>

@@ -1,35 +1,51 @@
 /**
- * Home screen — part of the scaffold-owned app shell. Drives the pipeline:
- * Record/Import → Review → Analyze → TracerPreview → Calibration → Results.
+ * Home screen — hub, not dashboard (docs/DESIGN.md §11): greeting header →
+ * Record (the one primary CTA) + Import → "Your sports" shortcut row →
+ * recent session card. Pipeline detail only appears while a session is
+ * actually in flight; full history lives one tap away on Sessions.
  *
- * Redesigned per docs/DESIGN.md: ScreenHeader + pipeline card (ProgressSteps)
- * + one primary CTA (Record) with quieter secondary/ghost actions. Single
- * mount entrance: header, pipeline, and action zone fade + translateY(8→0)
- * with a 60ms stagger, reduce-motion aware.
+ * Single mount entrance: groups fade + translateY(8→0) with a 60ms stagger,
+ * reduce-motion aware.
  */
-import { useEffect, useRef } from 'react';
-import { Animated, ScrollView, StyleSheet } from 'react-native';
+import { useEffect, useMemo, useRef } from 'react';
+import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../../types/navigation';
 import { navigateSport } from '../../modules/sports/navSport';
-import { useSessionStore } from '../../state/sessionStore';
 import {
+  availableSports,
+  SPORT_CATALOG,
+  type SportEntry,
+} from '../../modules/sports/sportCatalog';
+import {
+  formatRelativeWhen,
+  qualityLabel,
+  qualityTone,
+  shotHeadline,
+  sportName,
+} from '../../modules/sessions/shotDisplay';
+import { useSessionStore } from '../../state/sessionStore';
+import { useProfileStore } from '../../state/profileStore';
+import { useHistoryStore } from '../../state/historyStore';
+import {
+  Badge,
   Button,
   Card,
   ProgressSteps,
   ScreenHeader,
   SectionLabel,
+  SportIcon,
   useReducedMotion,
 } from '../components';
 import type { ProgressStep } from '../components';
-import { colors, motion, spacing } from '../theme';
+import { colors, motion, spacing, typography } from '../theme';
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
-const ENTRANCE_GROUPS = 3;
+const ENTRANCE_GROUPS = 5;
 const ENTRANCE_STAGGER_MS = 60;
 
 /**
@@ -85,9 +101,43 @@ export function HomeScreen() {
   const trackingStatus = useSessionStore((s) => s.trackingStatus);
   const trackingResult = useSessionStore((s) => s.trackingResult);
   const distance = useSessionStore((s) => s.distance);
+  const accountName = useProfileStore((s) => s.account?.name ?? null);
+  const chosenSports = useProfileStore((s) => s.sports);
+  const latestShot = useHistoryStore((s) => s.shots[0] ?? null);
 
-  const [headerStyle, pipelineStyle, actionsStyle] =
+  const [headerStyle, actionsStyle, pipelineStyle, sportsStyle, recentStyle] =
     useEntrance(reducedMotion);
+
+  const firstName = accountName?.trim().split(/\s+/)[0] || null;
+  const subtitle = firstName
+    ? `Trace every shot, ${firstName}.`
+    : 'Ready to trace your next shot.';
+
+  // The user's chosen available sports; all available sports until they pick.
+  const sportEntries = useMemo(() => {
+    const chosen = chosenSports
+      .map((id) => SPORT_CATALOG.find((entry) => entry.id === id))
+      .filter(
+        (entry): entry is SportEntry => entry !== undefined && entry.available,
+      );
+    return chosen.length > 0 ? chosen : [...availableSports()];
+  }, [chosenSports]);
+
+  const openSport = (entry: SportEntry) => {
+    if (entry.route === 'Record') {
+      navigation.navigate('Record');
+    } else if (entry.route) {
+      navigateSport(navigation, entry.route);
+    }
+  };
+
+  // 'Sessions' is mounted through App.tsx's route cast (like navSport).
+  const openSessions = () =>
+    (navigation as { navigate(route: string): void }).navigate('Sessions');
+
+  // Pipeline detail only earns screen space while a session is in flight
+  // (§4 density lock) — a loaded video or a tracking pass underway.
+  const sessionInFlight = video !== null || trackingStatus === 'running';
 
   // Detail strings are pinned by tests — keep derivations identical.
   const videoDetail = video
@@ -131,6 +181,8 @@ export function HomeScreen() {
     },
   ];
 
+  const recentHeadline = latestShot ? shotHeadline(latestShot) : null;
+
   return (
     <ScrollView
       style={styles.screen}
@@ -140,17 +192,7 @@ export function HomeScreen() {
       ]}
     >
       <Animated.View style={headerStyle}>
-        <ScreenHeader
-          title="GolfTracer AI"
-          subtitle="Trace your ball flight and estimate carry."
-        />
-      </Animated.View>
-
-      <Animated.View style={pipelineStyle}>
-        <SectionLabel style={styles.firstSectionLabel}>Pipeline</SectionLabel>
-        <Card testID="home-pipeline-card">
-          <ProgressSteps steps={steps} testID="home-pipeline-steps" />
-        </Card>
+        <ScreenHeader title="Tracr" subtitle={subtitle} />
       </Animated.View>
 
       <Animated.View style={actionsStyle}>
@@ -158,7 +200,6 @@ export function HomeScreen() {
           label="Record"
           variant="primary"
           size="lg"
-          style={styles.primaryCta}
           onPress={() => navigation.navigate('Record')}
         />
         <Button
@@ -168,38 +209,85 @@ export function HomeScreen() {
           style={styles.stackedButton}
           onPress={() => navigation.navigate('Import')}
         />
+      </Animated.View>
 
-        <SectionLabel>Continue</SectionLabel>
-        <Button
-          label="Analyze"
-          variant="secondary"
-          size="md"
-          disabled={video === null}
-          onPress={() => navigation.navigate('Analyze')}
-        />
-        <Button
-          label="Distance"
-          variant="secondary"
-          size="md"
-          disabled={trackingResult === null}
-          style={styles.stackedButton}
-          onPress={() => navigation.navigate('Calibration')}
-        />
+      {sessionInFlight ? (
+        <Animated.View style={pipelineStyle}>
+          <SectionLabel>Session in progress</SectionLabel>
+          <Card testID="home-pipeline-card">
+            <ProgressSteps steps={steps} testID="home-pipeline-steps" />
+          </Card>
+          <Button
+            label="Analyze"
+            variant="secondary"
+            size="md"
+            disabled={video === null}
+            style={styles.continueButton}
+            onPress={() => navigation.navigate('Analyze')}
+          />
+          <Button
+            label="Distance"
+            variant="secondary"
+            size="md"
+            disabled={trackingResult === null}
+            style={styles.stackedButton}
+            onPress={() => navigation.navigate('Calibration')}
+          />
+        </Animated.View>
+      ) : null}
 
-        <SectionLabel>Other sports</SectionLabel>
-        <Button
-          label="Soccer Analysis"
-          variant="ghost"
-          size="md"
-          onPress={() => navigateSport(navigation, 'SoccerAnalyze')}
-        />
-        <Button
-          label="Perfected Action"
-          variant="ghost"
-          size="md"
-          style={styles.stackedButton}
-          onPress={() => navigateSport(navigation, 'PerfectedAction')}
-        />
+      <Animated.View style={sportsStyle}>
+        <SectionLabel>Your sports</SectionLabel>
+        <View style={styles.sportsRow}>
+          {sportEntries.map((entry) => (
+            <Card
+              key={entry.id}
+              onPress={() => openSport(entry)}
+              testID={`home-sport-${entry.id}`}
+              accessibilityLabel={entry.name}
+              padded={false}
+              style={styles.sportCard}
+            >
+              <View style={styles.sportCardInner}>
+                <SportIcon sport={entry.id} size={28} />
+                <Text style={styles.sportCardLabel}>{entry.name}</Text>
+              </View>
+            </Card>
+          ))}
+        </View>
+      </Animated.View>
+
+      <Animated.View style={recentStyle}>
+        <SectionLabel>Recent session</SectionLabel>
+        {latestShot ? (
+          <Card
+            onPress={openSessions}
+            testID="home-recent-card"
+            accessibilityLabel={`${sportName(latestShot.sport)} session, ${formatRelativeWhen(latestShot.at)}`}
+          >
+            <View style={styles.recentTopRow}>
+              <Text style={typography.subtitle}>
+                {sportName(latestShot.sport)}
+              </Text>
+              <Text style={styles.recentWhen}>
+                {formatRelativeWhen(latestShot.at)}
+              </Text>
+            </View>
+            <View style={styles.recentStatsRow}>
+              {recentHeadline ? (
+                <Text style={styles.recentStat}>{recentHeadline}</Text>
+              ) : null}
+              <Badge
+                label={qualityLabel(latestShot.quality)}
+                tone={qualityTone(latestShot.quality)}
+              />
+            </View>
+          </Card>
+        ) : (
+          <Text style={styles.noSessions}>
+            No sessions yet — record your first shot.
+          </Text>
+        )}
       </Animated.View>
     </ScrollView>
   );
@@ -214,13 +302,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
   },
-  firstSectionLabel: {
-    marginTop: 0,
-  },
-  primaryCta: {
-    marginTop: spacing.xl,
-  },
   stackedButton: {
     marginTop: spacing.sm,
+  },
+  continueButton: {
+    marginTop: spacing.xs,
+  },
+  sportsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  sportCard: {
+    minWidth: 100,
+  },
+  sportCardInner: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm + spacing.xs,
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
+  },
+  sportCardLabel: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    color: colors.text,
+  },
+  recentTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  recentWhen: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
+  recentStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  recentStat: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  noSessions: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '400',
+    color: colors.textMuted,
   },
 });

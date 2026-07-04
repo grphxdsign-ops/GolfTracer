@@ -89,6 +89,37 @@ describe('AnalyzeScreen', () => {
     expect(state.trackingResult).toBe(result);
     expect(state.trackingStatus).toBe('done');
     expect(runTrackingMock).toHaveBeenCalledTimes(1);
+    // The 3 s budget promise (DESIGN §12) is passed explicitly.
+    expect(runTrackingMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ timeBudgetMs: 3000 }),
+    );
+  });
+
+  it('swaps the caption to the long-clip line after 3.5 s of tracking', async () => {
+    jest.useFakeTimers();
+    try {
+      runTrackingMock.mockImplementation(() => new Promise(() => undefined));
+      useSessionStore.setState({ frameSource: cannedFrameSource() });
+
+      renderAnalyze();
+      await waitFor(() =>
+        expect(screen.getByText('Reading frames…')).toBeTruthy(),
+      );
+
+      act(() => {
+        jest.advanceTimersByTime(3400);
+      });
+      expect(screen.queryByText('Still working — long clip')).toBeNull();
+
+      act(() => {
+        jest.advanceTimersByTime(200);
+      });
+      expect(screen.getByText('Still working — long clip')).toBeTruthy();
+      expect(screen.queryByText('Reading frames…')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('shows retry tips on a failed-quality track and retries on demand', async () => {

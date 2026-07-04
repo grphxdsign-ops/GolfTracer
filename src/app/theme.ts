@@ -85,6 +85,8 @@ export const radii = {
   sm: 8,
   md: 14,
   lg: 20,
+  /** Hero selection tiles (sport picker) — DESIGN.md §4. */
+  xl: 24,
   pill: 999,
 } as const;
 

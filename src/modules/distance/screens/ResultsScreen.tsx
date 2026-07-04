@@ -20,6 +20,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { EstimationMethod, RootStackParamList } from '../../../types';
 import { useSessionStore } from '../../../state/sessionStore';
+import {
+  clubAverages,
+  MIN_SHOTS_FOR_DELTA,
+  useHistoryStore,
+} from '../../../state/historyStore';
 import { useBallPointStore } from '../../tracking/screens/ballPointStore';
 import {
   colors,
@@ -37,6 +42,7 @@ import {
   ProgressBar,
   SectionLabel,
   StatTile,
+  TrendPill,
   useReducedMotion,
 } from '../../../app/components';
 import {
@@ -73,6 +79,12 @@ const METHOD_META: Record<
     tone: 'warning',
   },
 };
+
+/** Deltas render as whole yards — consistent decimals per session (§8). */
+const formatYards = (n: number): string => String(Math.round(n));
+
+/** 'pitching-wedge' → 'pitching wedge' for the delta caption. */
+const clubLabelOf = (club: string): string => club.replace(/-/g, ' ');
 
 /**
  * Hero carry number with a one-shot count-up on reveal (DESIGN.md §1/§5) —
@@ -256,6 +268,12 @@ export function ResultsScreen() {
   const setDistance = useSessionStore((s) => s.setDistance);
   const reset = useSessionStore((s) => s.reset);
   const resetDraft = useDistanceStore((s) => s.resetDraft);
+  // The club lives in the distance draft (published unchanged into the
+  // calibration by CalibrationScreen) — it keys the session-history record
+  // and the "vs your club average" comparison.
+  const club = useDistanceStore((s) => s.club);
+  const addShot = useHistoryStore((s) => s.addShot);
+  const historyShots = useHistoryStore((s) => s.shots);
   // The user's tap-to-place-ball point (native px) anchors the DTL fit's
   // tee ray when present.
   const ballPoint = useBallPointStore((s) => s.ballPoint);
@@ -280,19 +298,50 @@ export function ResultsScreen() {
     );
   }, [trackingResult, calibration, video, ballPoint]);
 
+  // Identity of the estimate already recorded to history — guards against
+  // double-adds when the effect re-runs for the same resolved estimate.
+  const recordedEstimate = useRef<DistanceEstimateResult | null>(null);
+  // The history id of THIS shot, so the club average excludes it.
+  const [recordedShotId, setRecordedShotId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (estimate) {
-      setDistance({
-        carryYards: estimate.carryYards,
-        totalYards: estimate.totalYards,
-        apexFeet: estimate.apexFeet,
-        ballSpeedMph: estimate.ballSpeedMph,
-        launchAngleDeg: estimate.launchAngleDeg,
-        confidence: estimate.confidence,
-        method: estimate.method,
-      });
+    if (!estimate) {
+      return;
     }
-  }, [estimate, setDistance]);
+    setDistance({
+      carryYards: estimate.carryYards,
+      totalYards: estimate.totalYards,
+      apexFeet: estimate.apexFeet,
+      ballSpeedMph: estimate.ballSpeedMph,
+      launchAngleDeg: estimate.launchAngleDeg,
+      confidence: estimate.confidence,
+      method: estimate.method,
+    });
+    if (recordedEstimate.current === estimate) {
+      return;
+    }
+    recordedEstimate.current = estimate;
+    addShot({
+      sport: 'golf',
+      quality: trackingResult?.track.quality ?? 'failed',
+      club,
+      method: estimate.method,
+      carryYards: estimate.carryYards,
+      totalYards: estimate.totalYards,
+      apexFeet: estimate.apexFeet,
+      ballSpeedMph: estimate.ballSpeedMph,
+      launchAngleDeg: estimate.launchAngleDeg,
+      confidence: estimate.confidence,
+    });
+    setRecordedShotId(useHistoryStore.getState().shots[0]?.id ?? null);
+  }, [estimate, setDistance, addShot, club, trackingResult]);
+
+  // Averages across PRIOR shots with this club (the current shot and
+  // club-prior guesses are excluded by clubAverages itself).
+  const averages = useMemo(
+    () => clubAverages(historyShots, club, recordedShotId ?? undefined),
+    [historyShots, club, recordedShotId],
+  );
 
   const handleNewShot = () => {
     reset();
@@ -319,6 +368,9 @@ export function ResultsScreen() {
 
   const meta = METHOD_META[estimate.method];
   const isFallback = estimate.method === 'club-prior';
+  // Honest deltas only: enough prior history AND a real measurement — a
+  // club-prior guess never wears a trend against its own prior (§8).
+  const showDeltas = !isFallback && averages.count >= MIN_SHOTS_FOR_DELTA;
 
   return (
     <ScrollView
@@ -342,8 +394,22 @@ export function ResultsScreen() {
       </Text>
 
       <Card variant="raised">
-        <HeroCarry carryYards={estimate.carryYards} approx={isFallback} />
-        <View style={styles.totalTile}>
+        <View style={styles.statRow}>
+          <HeroCarry carryYards={estimate.carryYards} approx={isFallback} />
+          {showDeltas && averages.carryYards !== undefined ? (
+            <View style={styles.trendSlot}>
+              <TrendPill
+                testID="results-carry-trend"
+                delta={estimate.carryYards - averages.carryYards}
+                unit="yd"
+                format={formatYards}
+                goodDirection="up"
+                base={averages.carryYards}
+              />
+            </View>
+          ) : null}
+        </View>
+        <View style={[styles.totalTile, styles.statRow]}>
           <StatTile
             size="standard"
             label="Total"
@@ -351,7 +417,24 @@ export function ResultsScreen() {
             unit="yd"
             approx={isFallback}
           />
+          {showDeltas && averages.totalYards !== undefined ? (
+            <View style={styles.trendSlot}>
+              <TrendPill
+                testID="results-total-trend"
+                delta={estimate.totalYards - averages.totalYards}
+                unit="yd"
+                format={formatYards}
+                goodDirection="up"
+                base={averages.totalYards}
+              />
+            </View>
+          ) : null}
         </View>
+        {showDeltas ? (
+          <Text style={styles.deltaCaption}>
+            vs your {clubLabelOf(club)} average ({averages.count} shots)
+          </Text>
+        ) : null}
         <ConfidenceMeter confidence={estimate.confidence} />
       </Card>
 
@@ -410,6 +493,18 @@ const styles = StyleSheet.create({
   },
   totalTile: {
     marginTop: spacing.md,
+  },
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  trendSlot: {
+    marginLeft: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  deltaCaption: {
+    ...typography.caption,
+    marginTop: spacing.xs,
   },
   meter: {
     marginTop: spacing.md,

@@ -12,9 +12,12 @@ describe('runTracking (full pipeline on a synthetic 60-frame flight)', () => {
   const progress: number[] = [];
   let resultPromise: ReturnType<typeof runTracking> | null = null;
 
+  // Frozen clock: accuracy assertions must not depend on machine speed, so
+  // the time budget never binds in these runs.
   const getResult = () => {
     resultPromise ??= runTracking(frameSource, {
       onProgress: (p) => progress.push(p),
+      clock: () => 0,
     });
     return resultPromise;
   };
@@ -98,7 +101,9 @@ describe('runTracking coordinate space (native > analysis resolution)', () => {
   });
 
   it('rescales the track and observations back to native pixels', async () => {
-    const { track, tracer } = await runTracking(makeFrameSource(flight.frames));
+    const { track, tracer } = await runTracking(makeFrameSource(flight.frames), {
+      clock: () => 0,
+    });
     expect(track.frameWidth).toBe(960);
     expect(track.frameHeight).toBe(540);
     expect(track.quality).toBe('high');
@@ -145,13 +150,17 @@ describe('runTracking failure paths', () => {
       occludedSteps: occluded,
       seed: 5,
     });
-    const { track } = await runTracking(makeFrameSource(flight.frames));
+    const { track } = await runTracking(makeFrameSource(flight.frames), {
+      clock: () => 0,
+    });
     expect(track.quality).toBe('failed');
   });
 
   it('grades a static video (no ball flight) as failed', async () => {
     const still = makeFlight({ flightFrames: 0, preImpactFrames: 40, seed: 6 });
-    const { track } = await runTracking(makeFrameSource(still.frames));
+    const { track } = await runTracking(makeFrameSource(still.frames), {
+      clock: () => 0,
+    });
     expect(track.quality).toBe('failed');
     expect(track.observations.length).toBeLessThan(5);
   });

@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { SoccerResultsScreen } from '../SoccerResultsScreen';
+import { useHistoryStore } from '../../../../state/historyStore';
 import { useSportsSessionStore } from '../../../sports/sportsSessionStore';
 import { computeJointAngleTable } from '../../../sports/pose/jointAngles';
 import { appendTakeToResult } from '../../analysis/takeCompare';
@@ -31,6 +32,7 @@ function renderResults() {
 
 beforeEach(() => {
   useSportsSessionStore.getState().reset();
+  useHistoryStore.getState().clear();
 });
 
 describe('SoccerResultsScreen', () => {
@@ -123,6 +125,27 @@ describe('SoccerResultsScreen', () => {
     expect(
       screen.getByText(/Biggest difference at contact: right Hip–Knee angle was 90°/),
     ).toBeTruthy();
+  });
+
+  it('records the analyzed take to session history exactly once', () => {
+    useSportsSessionStore.getState().setSoccerResult(cannedSoccerResult());
+    renderResults();
+
+    const shots = useHistoryStore.getState().shots;
+    expect(shots).toHaveLength(1);
+    expect(shots[0]).toMatchObject({
+      sport: 'soccer',
+      onTarget: true,
+      quality: 'high',
+    });
+    // 75 km/h peak → ~47 mph.
+    expect(Math.round(shots[0]!.shotSpeedMph!)).toBe(47);
+
+    // A re-render of the same analysis never double-records.
+    fireEvent(screen.getByTestId('pose-stage'), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 320, height: 220 } },
+    });
+    expect(useHistoryStore.getState().shots).toHaveLength(1);
   });
 
   it("navigates back to analysis via 'Analyze another take'", () => {

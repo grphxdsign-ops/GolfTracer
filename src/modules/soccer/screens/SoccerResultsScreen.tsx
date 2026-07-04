@@ -17,6 +17,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { RootStackParamList } from '../../../types/navigation';
+import type { TrackQuality } from '../../../types/tracking';
+import { useHistoryStore } from '../../../state/historyStore';
 import { colors, motion, radii, sharedStyles, spacing, typography } from '../../../app/theme';
 import {
   Badge,
@@ -44,6 +46,20 @@ const STAGE_HEIGHT = 220;
 const ENTRANCE_OFFSET = 8;
 /** Stagger between the three result groups (DESIGN.md §5: ≤5 × 60ms). */
 const ENTRANCE_STAGGER_MS = 60;
+/** m/s → mph for the session-history record (history speaks mph). */
+const MPS_TO_MPH = 2.236936;
+
+/**
+ * Track quality proxy for a soccer take: a measured goal-plane crossing
+ * means the 3D track held to the goal; anchored samples without a crossing
+ * are a partial track; nothing anchored is a weak one.
+ */
+function takeQuality(take: SoccerTakeResult): TrackQuality {
+  if (take.crossing) {
+    return 'high';
+  }
+  return take.samples.length > 0 ? 'medium' : 'low';
+}
 
 function goalHeadline(take: SoccerTakeResult): {
   label: string;
@@ -192,6 +208,23 @@ export function SoccerResultsScreen() {
 
   const take = result?.takes[result.takes.length - 1] ?? null;
   const speedValue = useCountUp(Math.round(take?.peakSpeedKmh ?? 0), reduced);
+
+  // Record each analyzed take to session history exactly once — the ref
+  // pins the take identity so re-renders never double-add.
+  const addShot = useHistoryStore((s) => s.addShot);
+  const recordedTake = useRef<SoccerTakeResult | null>(null);
+  useEffect(() => {
+    if (!take || recordedTake.current === take) {
+      return;
+    }
+    recordedTake.current = take;
+    addShot({
+      sport: 'soccer',
+      quality: takeQuality(take),
+      shotSpeedMph: take.peakSpeedMps * MPS_TO_MPH,
+      onTarget: take.crossing?.isGoal ?? false,
+    });
+  }, [take, addShot]);
 
   if (!result || !take) {
     return (

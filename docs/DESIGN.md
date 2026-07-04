@@ -1,8 +1,12 @@
-# GolfTracer AI — Design Language
+# Tracr — Design Language
 
-Single source of truth for the visual overhaul. Every token, component, and rule
+Single source of truth for the visual system. Every token, component, and rule
 here overrides the scaffold defaults in `src/app/theme.ts`. Register is
 **product** (a tool used mid-round, outdoors, one-handed), not marketing.
+
+Brand: the app is **Tracr** (display name; internal RN project name stays
+`GolfTracerAI` — renaming it breaks native project references). Never
+"Tracr AI", never "GolfTracer" in user-facing copy.
 
 ---
 
@@ -143,16 +147,24 @@ Base unit 4. `spacing = { xs:4, sm:8, md:16, lg:24, xl:32, xxl:48, xxxl:64 }`.
 - Screen padding: `md` horizontal; bottom CTAs get safe-area inset + `md`.
 - No nested cards. One container level per element.
 
-**Radius rule (Shape Consistency Lock)** — `radii = { sm:8, md:14, lg:20, pill:999 }`:
+**Radius rule (Shape Consistency Lock)** — `radii = { sm:8, md:14, lg:20, xl:24, pill:999 }`:
 
 | Shape | Radius |
 |---|---|
 | Inputs, segmented control track/thumb | `sm` (8) |
 | Cards, stages, skeletons | `md` (14) |
 | Video stage / large media frames | `lg` (20) |
+| Hero selection tiles (sport picker) | `xl` (24) |
 | Buttons, chips, badges, progress bars | `pill` |
 
 Minimum touch target 44×44pt (record control 72pt).
+
+**Progressive disclosure (screen density lock).** No screen shows more than:
+one hero element, one primary CTA, and ~3 glanceable sections. Everything
+else lives one tap away behind a section row (title + one-line summary +
+chevron) or an expandable card. Detail tables (fit diagnostics, full flight
+numbers, session lists) NEVER render open by default. When a screen
+accumulates a 4th section, the weakest section becomes a drill-in.
 
 ---
 
@@ -178,8 +190,24 @@ Everything else is ≤250ms and out of the way.
 
 Rules:
 - Animate `transform`/`opacity` only, native driver. Never width/height/top/left.
-- Press feedback: scale → 0.97 + fill darken. No bounce/overshoot on anything
-  touched repeatedly (record, nav, segments, scrubber). Scrubber = zero lag, 1:1.
+- **Press pop (Framer-grade, the sanctioned exception):** discrete CTAs
+  (`Button`) and hero selection tiles (`SportTile`) press with a two-beat
+  asymmetric interaction — press-in: `Animated.timing` scale → **0.97**
+  (tiles: 0.98 — big surfaces read absolute pixel travel) over **90ms**,
+  `Easing.out(Easing.quad)`, never a spring on the way down; release:
+  `Animated.spring` to 1 with `{ stiffness: 400, damping: 22, mass: 1 }` —
+  exactly one ~0.3% overshoot, settled ≈350ms. Damping ratio stays in
+  0.55–0.8: one visible overshoot is premium, two oscillations is toy.
+  Selection commits may pop via velocity injection
+  (`{ toValue: 1, velocity: 1.5, stiffness: 350, damping: 20 }`).
+  Reduce-motion: instant color swap only.
+- **Primary CTA glow:** the filled primary button carries a brand glow
+  (`shadowColor: primary, shadowOpacity 0.35, shadowRadius 16, offset y 6`;
+  Android `elevation 8`). Pressed = flatten: glow collapses and the fill
+  darkens one step. Glass buttons press by *lightening* one glass tier —
+  never opacity-dimming.
+- No bounce/overshoot on anything touched repeatedly or continuously
+  (record control, nav, segments, scrubber, steppers). Scrubber = zero lag, 1:1.
 - Stagger only for a genuine list-arrival moment: ≤5 items × 60ms, total <400ms.
 - No looping pulses on static elements. Recording state = color swap, not pulse.
 - Every custom animation checks `AccessibilityInfo.isReduceMotionEnabled()`
@@ -293,3 +321,58 @@ table is the canonical inventory.
 9. Fake-precision check.
 10. Reduced-motion pass.
 11. The tracer stays the star: chrome quiet wherever video/tracer is visible.
+
+---
+
+## 10. Onboarding — first launch only
+
+Flow (each step is its own screen; back always works; progress dots at top):
+
+1. **Welcome** — Tracr wordmark, one line of value ("Trace every shot."),
+   single CTA "Get started". No carousel, no marketing slides.
+2. **Sign in** — Sign in with Apple (the only account CTA, per Apple HIG
+   button style, rendered on our glass) + a quieter "Continue as guest"
+   ghost action. Never block on account: guest is a full profile.
+3. **Sports** — "What do you play?" Large glass selection tiles
+   (`SportTile`), one per catalog entry, **max 4 visible per viewport**,
+   vertical scroll for more. Tile = radii.xl rounded rect, ~104pt tall,
+   glossy glass (surface fill, top catchlight, soft inner sheen), custom
+   Skia brand icon left, name + tagline, selected state = primary hairline
+   ring + alpha(primary, .16) wash + check. Press = the sanctioned pop.
+   Unavailable sports render dimmed with a "Coming soon" badge and stay
+   unselectable. Multi-select; at least one required to continue.
+4. **Preferences** — units (yards/meters segmented), handedness, analytics
+   opt-in. Three rows max; everything editable later.
+5. **Permissions** — camera + photo library, asked HERE with a one-line
+   why-line each ("Tracr records your swing to trace the ball"), one at a
+   time, primed by our screen BEFORE the OS dialog. Denying anything still
+   completes onboarding — affected features re-prompt contextually.
+
+Completing onboarding writes `profileStore.completeOnboarding()`; the app
+never shows the flow again (sign-out re-arms it).
+
+## 11. Home — hub architecture (18Birdies/SwingVision register)
+
+Home is a hub, not a dashboard: quick actions first, everything else is a
+drill-in. Order: greeting header (first name if known) → **Record** (the
+one primary CTA) + Upload secondary → "Your sports" shortcut row (chosen
+sports only, small glass tiles routing straight into each flow) →
+**Recent session** (single latest-shot glass card with 2 stats, tap →
+Sessions) → nothing else. Pipeline detail, full history, settings: all
+behind taps (Sessions screen, Settings sheet). Density lock (§4) applies.
+
+## 12. Speed is a feature — the 1–3 s analysis budget
+
+Nobody waits on a spinner while we admire our own pipeline.
+
+- **Hard target: tracking completes in ≤3000 ms wall-clock** on a mid
+  device; aim 1–1.5 s. `runTracking` accepts `timeBudgetMs` (default 3000)
+  and *adapts to stay inside it*: drops analysis width a notch, strides
+  frames when behind, stops consuming frames once the track has clearly
+  landed, and bounds the offline rescue pass to the remaining budget. A
+  degraded-but-honest result inside budget beats a perfect one outside it —
+  quality grading already tells the user the truth.
+- Progress UI is staged and truthful (never a generic spinner); if analysis
+  somehow exceeds budget the caption says what it's still doing.
+- The reveal IS the reward: navigate to the tracer the moment tracking
+  resolves; never hold the user on a done progress bar.

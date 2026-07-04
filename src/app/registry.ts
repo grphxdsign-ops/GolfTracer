@@ -9,16 +9,20 @@
  * assignable, and App.tsx only ever reads `screens`.
  */
 import type { ScreenRegistration } from '../types/modules';
+import { onboardingModule } from '../modules/onboarding';
 import { captureModule } from '../modules/capture';
 import { trackingModule } from '../modules/tracking';
 import { distanceModule } from '../modules/distance';
 import { soccerModule } from '../modules/soccer';
 import { perfectedModule } from '../modules/perfected';
+import { sessionsModule } from '../modules/sessions';
 
 export const modules: { screens: ScreenRegistration[]; name: string }[] = [
+  onboardingModule,
   captureModule,
   trackingModule,
   distanceModule,
   soccerModule,
   perfectedModule,
+  sessionsModule,
 ];

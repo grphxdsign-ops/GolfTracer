@@ -30,6 +30,12 @@ export type {
 } from './SegmentedControl';
 export { Skeleton } from './Skeleton';
 export type { SkeletonProps } from './Skeleton';
+export { SportIcon } from './SportIcon';
+export type { SportIconProps } from './SportIcon';
+export { SportTile } from './SportTile';
+export type { SportTileProps } from './SportTile';
 export { StatTile } from './StatTile';
 export type { StatTileProps } from './StatTile';
+export { TrendPill } from './TrendPill';
+export type { TrendPillProps } from './TrendPill';
 export { useReducedMotion } from './useReducedMotion';

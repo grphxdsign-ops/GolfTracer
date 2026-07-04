@@ -115,6 +115,8 @@ describe('tap-derived seeding on a cluttered 30 fps launch (evidence #2)', () =>
       // Native-pixel tap on the ball (2x the analysis coordinates).
       ballPoint: { x: TAP.x * NATIVE_SCALE, y: TAP.y * NATIVE_SCALE },
       detectorOptions: { backgroundMode: 'static' },
+      // Frozen clock: seeding behavior must not depend on machine speed.
+      clock: () => 0,
     });
 
     expect(track.quality).not.toBe('failed');
