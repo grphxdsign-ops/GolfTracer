@@ -8,7 +8,7 @@
  */
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, spacing, typography } from '../theme';
+import { alpha, colors, spacing, typography } from '../theme';
 
 export type ProgressStepState = 'done' | 'active' | 'todo';
 
@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   ringDone: {
-    backgroundColor: 'rgba(74,201,126,0.25)',
+    backgroundColor: alpha(colors.primary, 0.25),
   },
   doneDot: {
     width: 8,

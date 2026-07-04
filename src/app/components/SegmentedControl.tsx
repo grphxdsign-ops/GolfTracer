@@ -106,10 +106,12 @@ const styles = StyleSheet.create({
     top: 2,
     left: 2,
     height: 36,
-    backgroundColor: colors.surfaceRaised,
+    // Tier-3 glass so the thumb still reads over the stage-dark track.
+    backgroundColor: colors.overlay,
     borderRadius: radii.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.borderStrong,
+    borderTopColor: colors.glassHighlight,
   },
   segment: {
     flex: 1,

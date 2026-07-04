@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../types/navigation';
 import { colors, motion, radii, sharedStyles, spacing, typography } from '../../../app/theme';
 import {
+  Badge,
   Button,
   Card,
   EmptyState,
@@ -256,7 +257,6 @@ export function SoccerResultsScreen() {
             onLayout={(e) => setStageWidth(e.nativeEvent.layout.width)}
             style={styles.stage}
           >
-            <Text style={typography.caption}>Contact freeze-frame</Text>
             {pose && stageWidth > 0 ? (
               <PoseOverlay
                 pose={pose}
@@ -266,6 +266,10 @@ export function SoccerResultsScreen() {
                 viewHeight={STAGE_HEIGHT}
               />
             ) : null}
+            {/* Broadcast-style status chip: rides IN the stage (DESIGN.md §8). */}
+            <View pointerEvents="none" style={styles.stageChip}>
+              <Badge label="Contact freeze-frame" />
+            </View>
           </View>
           {take.jointAnglesAtContact ? (
             <AngleTable table={take.jointAnglesAtContact} />
@@ -347,10 +351,13 @@ const styles = StyleSheet.create({
     height: STAGE_HEIGHT,
     borderRadius: radii.lg,
     backgroundColor: colors.stage,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: spacing.sm,
     overflow: 'hidden',
+  },
+  stageChip: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
   },
   tableRow: {
     flexDirection: 'row',

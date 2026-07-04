@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   refRemovePressed: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.surface,
   },
   refRemoveGlyph: {
     color: colors.textMuted,

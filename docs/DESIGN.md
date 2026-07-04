@@ -8,14 +8,19 @@ here overrides the scaffold defaults in `src/app/theme.ts`. Register is
 
 ## 1. Brand personality
 
-**"Broadcast booth, not toy."**
+**"Broadcast booth, not toy." — warm yet sleek.**
 
 - The tracer is the product. Every screen's chrome exists to frame video and
   numbers, never to compete with them. On any screen where the tracer or video
   is visible, the comet is the only hot, saturated element.
-- Calm, dark, green-tinted field — like a course at dusk under stadium light.
-  One green hue family carries every neutral. The single warm color in the
-  entire app is the tracer's ember gradient.
+- Warm, dark, course-green field — dusk fairway under warm stadium light.
+  Neutrals are warm (cream-tinted glass over olive-black), the accent is a
+  lively warm course green, and the only *hot* color in the app is the
+  tracer's ember gradient.
+- Chrome is **glass**: surfaces are translucent warm-white layers that
+  composite over whatever sits beneath them (background, stage, video), with
+  hairline borders and a brighter top-edge highlight. Text is glassy too —
+  translucent warm cream, never opaque pure white.
 - Confident, plain copy. "Swing saved." not "Swing saved!" No "elevate",
   "seamless", "unleash". Labels say what the button does: "Track this swing",
   "Estimate distance", "Recalibrate".
@@ -30,48 +35,70 @@ here overrides the scaffold defaults in `src/app/theme.ts`. Register is
 
 ## 2. Color tokens
 
-One hue family (green, ~H150). No warm/cool gray mixing. The tracer ember
-palette is the only warm color and appears **only** on/around video stages.
+Warm course green + warm cream glass. No cool grays anywhere. The tracer
+ember palette is the only *hot* color and appears **only** on/around video
+stages.
 
-### Surfaces (elevation by lightness step, not shadow)
-
-| Token | Hex | Use |
-|---|---|---|
-| `colors.stage` | `#060F0A` | Video/tracer/pose stages, segmented-control tracks. Darkest tier — makes the tracer pop. Replaces hardcoded `#08130C`. |
-| `colors.background` | `#0B1F14` | Screen background (tier 0). |
-| `colors.surface` | `#122B1B` | Cards, list rows (tier 1). |
-| `colors.surfaceRaised` | `#1A3823` | Selected rows, segmented thumb, bottom sheets (tier 2). |
-| `colors.overlay` | `#234630` | Tooltips, popovers, chrome floating over video (tier 3). |
-
-### Text
-
-| Token | Hex | Notes |
-|---|---|---|
-| `colors.text` | `#F2F7F3` | Off-white, green-tinted. Never pure `#FFFFFF` on these surfaces. |
-| `colors.textMuted` | `#A9C4B1` | ≥4.5:1 on every surface tier incl. `overlay` (5.6:1). |
-| `colors.textDisabled` | `#5E7767` | Disabled labels only, never body copy. |
-| `colors.textOnAccent` | `#07130C` | Label color on `primary` fills. 9.5:1. |
-
-### Accent & semantic
+### Base tiers (opaque — everything else composites over these)
 
 | Token | Hex | Use |
 |---|---|---|
-| `colors.primary` | `#4AC97E` | THE UI accent. Primary CTA fill, active step, focus ring, selected state. Exactly one per screen. |
-| `colors.primaryPressed` | `#3BAF6A` | Pressed fill. |
-| `colors.accent` | `#8FE3A8` | Tinted accent for selected text/icons/links on dark surfaces (nav theme primary). |
-| `colors.success` | `#4AC97E` | Alias of primary — green means good, deliberately unified. |
-| `colors.warning` | `#E0A83E` | Low-confidence, fallback-method warnings. Muted amber; never competes with tracer ember. |
-| `colors.danger` | `#E5484D` | Destructive/error only. |
+| `colors.stage` | `#0A0E07` | Video/tracer/pose stages, segmented-control tracks, inputs. Darkest tier — makes the tracer pop. |
+| `colors.background` | `#11180E` | Screen background (tier 0). Warm olive-black. |
 
-### Borders (hairlines, alpha-white so they sit on any tier)
+### Glass surfaces (translucent warm-white — elevation by opacity step)
+
+| Token | Value | Use |
+|---|---|---|
+| `colors.surface` | `rgba(255,251,235,0.055)` | Cards, list rows (tier 1). |
+| `colors.surfaceRaised` | `rgba(255,251,235,0.09)` | Selected rows, segmented thumb, secondary buttons (tier 2). |
+| `colors.overlay` | `rgba(255,251,235,0.13)` | Chips/badges floating over video, tooltips (tier 3). |
+| `colors.glassHighlight` | `rgba(255,253,245,0.10)` | Top-edge hairline highlight on glass cards — the "catchlight". |
+
+Glass composites: the same card reads darker over the stage than over the
+background. That is intended — chrome belongs to what it floats on. One
+glass level per element; a chip inside a card is fine, a card inside a card
+is not (§4 still holds).
+
+### Text (glassy cream — never opaque white, never pure `#FFFFFF`)
+
+| Token | Value | Notes |
+|---|---|---|
+| `colors.text` | `rgba(255,251,242,0.96)` | Primary copy — warm cream glass. |
+| `colors.textMuted` | `rgba(255,247,235,0.66)` | ≥4.5:1 on every tier incl. `overlay`-over-stage. |
+| `colors.textDisabled` | `rgba(255,247,235,0.38)` | Disabled labels only, never body copy. |
+| `colors.textOnAccent` | `#0A1607` | Label color on `primary` fills. |
+
+Hero numerals (`display` role only) carry a soft warm sheen:
+`textShadowColor rgba(255,236,200,0.28)`, radius 12, offset (0,0). No other
+text gets a shadow; no gradient text in-app.
+
+### Accent & semantic (warm family)
+
+| Token | Hex | Use |
+|---|---|---|
+| `colors.primary` | `#5BCE62` | THE UI accent — lively warm course green. Primary CTA fill, active step, selected state. Exactly one per screen. |
+| `colors.primaryPressed` | `#4AB851` | Pressed fill. |
+| `colors.accent` | `#A9E8A2` | Tinted accent for selected text/icons/links on dark glass (nav theme primary). |
+| `colors.success` | `#5BCE62` | Alias of primary — green means good, deliberately unified. |
+| `colors.warning` | `#E6AE4A` | Low-confidence, fallback-method warnings. Warm amber; never competes with tracer ember. |
+| `colors.danger` | `#E5544B` | Destructive/error only. Warm red. |
+| `colors.dangerPressed` | `#C93A3F` | Pressed fill for danger buttons. |
+
+Derived tints (selected chips, done-step rings, trim regions) use
+`alpha(token, a)` from `theme.ts` — never a hand-written `rgba()` of a token
+color, so a palette change propagates everywhere.
+
+### Borders (hairlines, warm alpha-white so they sit on any tier)
 
 | Token | Value |
 |---|---|
-| `colors.borderSubtle` | `rgba(255,255,255,0.08)` — card outlines, dividers |
-| `colors.border` | `rgba(255,255,255,0.12)` — inputs, segmented track edge |
-| `colors.borderStrong` | `rgba(255,255,255,0.18)` — focus/selected outline base |
+| `colors.borderSubtle` | `rgba(255,248,235,0.10)` — card outlines, dividers |
+| `colors.border` | `rgba(255,248,235,0.14)` — inputs, segmented track edge |
+| `colors.borderStrong` | `rgba(255,248,235,0.22)` — focus/selected outline base |
 
 1px hairlines only. Never a colored 2–4px border, never a left/right stripe.
+Glass cards may brighten only their **top** edge with `glassHighlight`.
 
 ### Tracer ember (video-stage only — never in chrome)
 
@@ -227,12 +254,18 @@ table is the canonical inventory.
 ## 8. Anti-slop checklist (ban on sight)
 
 - [ ] No side-stripe border accents on cards/rows/alerts.
-- [ ] No gradient text; no decorative blur/glass outside genuine video-overlay chrome.
+- [ ] No gradient text (the `display` sheen shadow is the only text effect).
+- [ ] Glass is the surface language, not decoration: no glass-on-glass stacks
+      (card-in-card), no full-bleed frosted panels over legible content, and
+      the only brightened edge on a glass card is the top `glassHighlight`.
 - [ ] No identical stat-card grids or repeated "giant number + tiny label" hero-metric template — vary tile size by importance.
 - [ ] No uppercase-tracked eyebrow above every section; ≤1 `overline` per screen.
 - [ ] No numbered 01/02/03 markers unless content is a literal ordered flow.
-- [ ] No pure `#000` or pure `#FFF`; neutrals stay in the green family.
+- [ ] No pure `#000` or pure `#FFF`; opaque tiers stay warm olive-green,
+      glass fills and text stay translucent warm cream.
 - [ ] Max one saturated accent per screen (+ tracer ember on video stages only).
+- [ ] Status floating over a video stage rides IN the stage as a glass chip
+      (tier-3 `overlay` fill), broadcast-style — not as a row below it.
 - [ ] No generic centered spinners — skeletons/progress matching final layout.
 - [ ] No `Alert.alert` as default error surface — inline, specific, blame-free copy with a next step.
 - [ ] No modal for simple actions; no bouncing/pulsing/looping decoration.

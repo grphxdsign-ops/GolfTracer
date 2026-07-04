@@ -50,7 +50,8 @@ const variantColors: Record<
   },
   ghost: {
     bg: 'transparent',
-    bgPressed: 'rgba(255,255,255,0.06)',
+    // Pressed state gains the tier-1 warm glass fill.
+    bgPressed: colors.surface,
     label: colors.accent,
   },
   danger: {

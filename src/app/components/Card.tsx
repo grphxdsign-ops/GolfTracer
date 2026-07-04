@@ -98,6 +98,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.borderSubtle,
+    // Glass catchlight: the top edge is the only brightened border
+    // (DESIGN.md §2/§8).
+    borderTopColor: colors.glassHighlight,
   },
   padded: {
     padding: spacing.md,

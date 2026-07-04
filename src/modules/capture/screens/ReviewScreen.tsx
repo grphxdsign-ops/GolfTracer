@@ -16,7 +16,7 @@ import type { RootStackParamList } from '../../../types/navigation';
 import type { FrameSource } from '../../../types/media';
 import { TrimmedFrameSource } from '../../../adapters/frames/TrimmedFrameSource';
 import { useSessionStore } from '../../../state/sessionStore';
-import { colors, radii, spacing, typography } from '../../../app/theme';
+import { alpha, colors, radii, spacing, typography } from '../../../app/theme';
 import {
   Button,
   Card,
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(74,201,126,0.28)',
+    backgroundColor: alpha(colors.primary, 0.28),
   },
   trimHandle: {
     position: 'absolute',

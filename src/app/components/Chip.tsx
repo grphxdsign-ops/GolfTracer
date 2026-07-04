@@ -7,7 +7,7 @@
  */
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, radii, spacing } from '../theme';
+import { alpha, colors, radii, spacing } from '../theme';
 
 export interface ChipProps {
   label: string;
@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
   },
   pillSelected: {
-    backgroundColor: 'rgba(74,201,126,0.16)',
+    backgroundColor: alpha(colors.primary, 0.16),
     borderWidth: 1,
     borderColor: colors.primary,
   },

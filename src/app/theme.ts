@@ -10,30 +10,58 @@ import { Easing, StyleSheet } from 'react-native';
 import type { TextStyle } from 'react-native';
 
 export const colors = {
-  /** Video/tracer/pose stages, segmented-control tracks — darkest tier. */
-  stage: '#060F0A',
-  background: '#0B1F14',
-  surface: '#122B1B',
-  surfaceRaised: '#1A3823',
-  /** Tooltips, popovers, chrome floating over video (tier 3). */
-  overlay: '#234630',
-  primary: '#4AC97E',
-  primaryPressed: '#3BAF6A',
-  accent: '#8FE3A8',
-  text: '#F2F7F3',
-  textMuted: '#A9C4B1',
-  textDisabled: '#5E7767',
+  /** Video/tracer/pose stages, segmented tracks, inputs — darkest tier. */
+  stage: '#0A0E07',
+  /** Screen background (tier 0) — warm olive-black. */
+  background: '#11180E',
+  /** Glass tier 1 — cards, list rows. Composites over whatever is beneath. */
+  surface: 'rgba(255,251,235,0.055)',
+  /** Glass tier 2 — selected rows, segmented thumb, secondary buttons. */
+  surfaceRaised: 'rgba(255,251,235,0.09)',
+  /** Glass tier 3 — chips/badges floating over video, tooltips. */
+  overlay: 'rgba(255,251,235,0.13)',
+  /** Top-edge catchlight hairline on glass cards. */
+  glassHighlight: 'rgba(255,253,245,0.10)',
+  primary: '#5BCE62',
+  primaryPressed: '#4AB851',
+  accent: '#A9E8A2',
+  /** Glassy warm cream — never opaque white. */
+  text: 'rgba(255,251,242,0.96)',
+  textMuted: 'rgba(255,247,235,0.66)',
+  textDisabled: 'rgba(255,247,235,0.38)',
   /** Label color on `primary` fills. */
-  textOnAccent: '#07130C',
-  borderSubtle: 'rgba(255,255,255,0.08)',
-  border: 'rgba(255,255,255,0.12)',
-  borderStrong: 'rgba(255,255,255,0.18)',
-  danger: '#E5484D',
+  textOnAccent: '#0A1607',
+  borderSubtle: 'rgba(255,248,235,0.10)',
+  border: 'rgba(255,248,235,0.14)',
+  borderStrong: 'rgba(255,248,235,0.22)',
+  danger: '#E5544B',
   /** Pressed fill for danger buttons — mirrors primaryPressed. */
   dangerPressed: '#C93A3F',
-  success: '#4AC97E',
-  warning: '#E0A83E',
+  success: '#5BCE62',
+  warning: '#E6AE4A',
 } as const;
+
+/**
+ * Tint a `#RRGGBB`/`#RGB` token to a translucent rgba() string. All derived
+ * tints (selected chips, done-step rings, trim regions) go through this so a
+ * palette change propagates everywhere (DESIGN.md §2). Non-hex input is
+ * returned unchanged — alpha-on-alpha stacking is a design smell, not a
+ * runtime error.
+ */
+export function alpha(hex: string, a: number): string {
+  const m3 = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(hex);
+  const m6 = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  const channels = m3
+    ? [m3[1]! + m3[1]!, m3[2]! + m3[2]!, m3[3]! + m3[3]!]
+    : m6
+      ? [m6[1]!, m6[2]!, m6[3]!]
+      : null;
+  if (!channels) {
+    return hex;
+  }
+  const [r, g, b] = channels.map((c) => parseInt(c, 16));
+  return `rgba(${r},${g},${b},${a})`;
+}
 
 /** Tracer ember palette — video-stage only, never in chrome (DESIGN.md §2). */
 export const tracer = {
@@ -69,6 +97,11 @@ export const typography = StyleSheet.create({
     letterSpacing: -1.2,
     color: colors.text,
     fontVariant: ['tabular-nums'],
+    // The one sanctioned text effect: a soft warm sheen on hero numerals
+    // (DESIGN.md §2) — glassy broadcast glow, not a drop shadow.
+    textShadowColor: 'rgba(255,236,200,0.28)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
   },
   title: {
     fontSize: 28,
