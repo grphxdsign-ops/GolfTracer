@@ -100,8 +100,6 @@ export function PoseOverlay({
       path.lineTo(pb.x, pb.y);
     }
     return path;
-    // `visible` is a stable pure predicate.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pose.keypoints, mapping]);
 
   const joints = useMemo(

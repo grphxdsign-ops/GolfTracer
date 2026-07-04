@@ -55,7 +55,7 @@ const variantColors: Record<
   },
   danger: {
     bg: colors.danger,
-    bgPressed: '#C93A3F',
+    bgPressed: colors.dangerPressed,
     label: colors.text,
   },
 };

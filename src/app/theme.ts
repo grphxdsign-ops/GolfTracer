@@ -29,6 +29,8 @@ export const colors = {
   border: 'rgba(255,255,255,0.12)',
   borderStrong: 'rgba(255,255,255,0.18)',
   danger: '#E5484D',
+  /** Pressed fill for danger buttons — mirrors primaryPressed. */
+  dangerPressed: '#C93A3F',
   success: '#4AC97E',
   warning: '#E0A83E',
 } as const;
