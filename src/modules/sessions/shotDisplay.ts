@@ -29,6 +29,11 @@ const MONTHS = [
 ] as const;
 
 export function sportName(sport: SportId): string {
+  // Perfected action left the sport catalog (it's a tool, DESIGN.md §11) but
+  // may exist in older history records — keep its display name stable.
+  if (sport === 'perfected') {
+    return 'Perfected action';
+  }
   return SPORT_CATALOG.find((entry) => entry.id === sport)?.name ?? sport;
 }
 

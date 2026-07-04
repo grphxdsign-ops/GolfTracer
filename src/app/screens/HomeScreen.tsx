@@ -1,8 +1,9 @@
 /**
  * Home screen — hub, not dashboard (docs/DESIGN.md §11): greeting header →
  * Record (the one primary CTA) + Import → "Your sports" shortcut row →
- * recent session card. Pipeline detail only appears while a session is
- * actually in flight; full history lives one tap away on Sessions.
+ * Tools (Perfected action — a tool, not a sport) → recent session card.
+ * Pipeline detail only appears while a session is actually in flight; full
+ * history lives one tap away on Sessions.
  *
  * Single mount entrance: groups fade + translateY(8→0) with a 60ms stagger,
  * reduce-motion aware.
@@ -45,7 +46,7 @@ import { colors, motion, spacing, typography } from '../theme';
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
-const ENTRANCE_GROUPS = 5;
+const ENTRANCE_GROUPS = 6;
 const ENTRANCE_STAGGER_MS = 60;
 
 /**
@@ -105,8 +106,14 @@ export function HomeScreen() {
   const chosenSports = useProfileStore((s) => s.sports);
   const latestShot = useHistoryStore((s) => s.shots[0] ?? null);
 
-  const [headerStyle, actionsStyle, pipelineStyle, sportsStyle, recentStyle] =
-    useEntrance(reducedMotion);
+  const [
+    headerStyle,
+    actionsStyle,
+    pipelineStyle,
+    sportsStyle,
+    toolsStyle,
+    recentStyle,
+  ] = useEntrance(reducedMotion);
 
   const firstName = accountName?.trim().split(/\s+/)[0] || null;
   const subtitle = firstName
@@ -257,6 +264,26 @@ export function HomeScreen() {
         </View>
       </Animated.View>
 
+      <Animated.View style={toolsStyle}>
+        <SectionLabel>Tools</SectionLabel>
+        <Card
+          onPress={() => navigateSport(navigation, 'PerfectedAction')}
+          testID="home-tool-perfected"
+          accessibilityLabel="Perfected action"
+        >
+          <View style={styles.toolRow}>
+            <SportIcon sport="perfected" size={28} />
+            <View style={styles.toolCopy}>
+              <Text style={typography.subtitle}>Perfected action</Text>
+              <Text style={styles.toolTagline}>
+                Your swing, morphed toward its ideal
+              </Text>
+            </View>
+            <Text style={styles.toolChevron}>›</Text>
+          </View>
+        </Card>
+      </Animated.View>
+
       <Animated.View style={recentStyle}>
         <SectionLabel>Recent session</SectionLabel>
         {latestShot ? (
@@ -327,6 +354,26 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '500',
     color: colors.text,
+  },
+  toolRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  toolCopy: {
+    flex: 1,
+  },
+  toolTagline: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  toolChevron: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textDisabled,
   },
   recentTopRow: {
     flexDirection: 'row',

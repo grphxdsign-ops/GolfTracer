@@ -135,14 +135,13 @@ describe('HomeScreen', () => {
     renderHome();
     expect(screen.getByTestId('home-sport-golf')).toBeTruthy();
     expect(screen.getByTestId('home-sport-soccer')).toBeTruthy();
-    expect(screen.getByTestId('home-sport-perfected')).toBeTruthy();
+    // Perfected action is a tool, not a sport — never in the sports row.
+    expect(screen.queryByTestId('home-sport-perfected')).toBeNull();
 
     fireEvent.press(screen.getByTestId('home-sport-golf'));
     expect(mockNavigate).toHaveBeenCalledWith('Record');
     fireEvent.press(screen.getByTestId('home-sport-soccer'));
     expect(mockNavigate).toHaveBeenCalledWith('SoccerAnalyze');
-    fireEvent.press(screen.getByTestId('home-sport-perfected'));
-    expect(mockNavigate).toHaveBeenCalledWith('PerfectedAction');
   });
 
   it('shows only the chosen sports once the profile has a selection', () => {
@@ -150,7 +149,14 @@ describe('HomeScreen', () => {
     renderHome();
     expect(screen.getByTestId('home-sport-soccer')).toBeTruthy();
     expect(screen.queryByTestId('home-sport-golf')).toBeNull();
-    expect(screen.queryByTestId('home-sport-perfected')).toBeNull();
+  });
+
+  it('offers Perfected action under Tools and routes to it', () => {
+    renderHome();
+    const tool = screen.getByTestId('home-tool-perfected');
+    expect(tool).toBeTruthy();
+    fireEvent.press(tool);
+    expect(mockNavigate).toHaveBeenCalledWith('PerfectedAction');
   });
 
   it('shows the no-sessions line when history is empty', () => {

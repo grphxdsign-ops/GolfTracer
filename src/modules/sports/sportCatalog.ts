@@ -6,6 +6,11 @@
  *
  * Honesty rule: `available: false` sports render as "Coming soon" and cannot
  * be selected — we never imply tracing we don't ship (DESIGN.md §8).
+ *
+ * Perfected action is deliberately NOT in this catalog: it is a tool (your
+ * recorded swing morphed toward an ideal), not a sport. It lives under
+ * Tools on Home. 'perfected' stays in SportId only so history records and
+ * the icon set keep compiling.
  */
 
 export type SportId =
@@ -25,7 +30,7 @@ export interface SportEntry {
   icon: SportId;
   available: boolean;
   /** Route the Home shortcut opens (available sports only). */
-  route?: 'Record' | 'SoccerAnalyze' | 'PerfectedAction';
+  route?: 'Record' | 'SoccerAnalyze';
 }
 
 export const SPORT_CATALOG: readonly SportEntry[] = [
@@ -44,14 +49,6 @@ export const SPORT_CATALOG: readonly SportEntry[] = [
     icon: 'soccer',
     available: true,
     route: 'SoccerAnalyze',
-  },
-  {
-    id: 'perfected',
-    name: 'Perfected action',
-    tagline: 'Your swing, morphed to ideal',
-    icon: 'perfected',
-    available: true,
-    route: 'PerfectedAction',
   },
   {
     id: 'tennis',
