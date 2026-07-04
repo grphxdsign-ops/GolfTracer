@@ -60,7 +60,7 @@ const RETRY_TIPS = [
 /** Aspect-correct placeholder box the user taps to mark the ball. */
 const BALL_BOX_HEIGHT = 180;
 
-/** The product promise (DESIGN §12): tracking adapts to finish inside 3 s. */
+/** The product promise (DESIGN §13): tracking adapts to finish inside 3 s. */
 const TIME_BUDGET_MS = 3000;
 
 /**

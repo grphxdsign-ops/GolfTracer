@@ -46,8 +46,6 @@ const STAGE_HEIGHT = 220;
 const ENTRANCE_OFFSET = 8;
 /** Stagger between the three result groups (DESIGN.md §5: ≤5 × 60ms). */
 const ENTRANCE_STAGGER_MS = 60;
-/** m/s → mph for the session-history record (history speaks mph). */
-const MPS_TO_MPH = 2.236936;
 
 /**
  * Track quality proxy for a soccer take: a measured goal-plane crossing
@@ -66,29 +64,33 @@ function goalHeadline(take: SoccerTakeResult): {
   color: string;
   detail: string;
 } {
+  // Crossing coordinates come from monocular depth reconstruction — one
+  // decimal (~10 cm) is the honest bound; two implied centimeter accuracy
+  // the pipeline does not have (DESIGN.md §8 fake-precision rule). Verdict
+  // labels are sentence case, no exclamation (§8 copy rule).
   const g = take.crossing;
   if (g?.isGoal) {
     return {
-      label: 'GOAL!',
+      label: 'Goal',
       color: colors.success,
       detail:
         g.xM !== undefined && g.yM !== undefined
-          ? `Crossed the line ${g.xM.toFixed(2)} m from the left post at a height of ${g.yM.toFixed(2)} m`
+          ? `Crossed the line ~${g.xM.toFixed(1)} m from the left post at a height of ~${g.yM.toFixed(1)} m`
           : 'Crossed the goal line inside the posts',
     };
   }
   if (g?.crossed) {
     return {
-      label: 'NO GOAL',
+      label: 'No goal',
       color: colors.danger,
       detail:
         g.xM !== undefined && g.yM !== undefined
-          ? `Crossed the goal plane outside: ${g.xM.toFixed(2)} m from the left post, height ${g.yM.toFixed(2)} m`
+          ? `Crossed the goal plane outside: ~${g.xM.toFixed(1)} m from the left post, height ~${g.yM.toFixed(1)} m`
           : 'Crossed the goal plane outside the frame',
     };
   }
   return {
-    label: 'NO GOAL',
+    label: 'No goal',
     color: colors.danger,
     detail: 'The ball never reached the goal line',
   };
@@ -221,7 +223,8 @@ export function SoccerResultsScreen() {
     addShot({
       sport: 'soccer',
       quality: takeQuality(take),
-      shotSpeedMph: take.peakSpeedMps * MPS_TO_MPH,
+      // History speaks the sport's canon unit — the analyzer's native km/h.
+      shotSpeedKmh: take.peakSpeedKmh,
       onTarget: take.crossing?.isGoal ?? false,
     });
   }, [take, addShot]);
@@ -265,16 +268,19 @@ export function SoccerResultsScreen() {
 
       <Reveal order={1} reduced={reduced}>
         <Card style={styles.sectionCard}>
+          {/* Monocular speed is an estimate — it wears the ~ (DESIGN.md §8);
+              distance likewise rounds to the honest whole meter. */}
           <StatTile
             size="hero"
             label="Peak shot speed"
             value={speedValue}
             unit="km/h"
+            approx
           />
           {take.distanceToGoalM !== null ? (
             <Text style={styles.distanceCaption}>
-              Ball distance to goal line at contact:{' '}
-              {take.distanceToGoalM.toFixed(1)} m
+              Ball distance to goal line at contact: ~
+              {Math.round(take.distanceToGoalM)} m
             </Text>
           ) : null}
         </Card>

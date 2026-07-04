@@ -33,8 +33,9 @@ export interface ShotRecord {
   ballSpeedMph?: number;
   launchAngleDeg?: number;
   confidence?: number;
-  // Soccer
-  shotSpeedMph?: number;
+  // Soccer — km/h is the sport's canon (FIFA/UEFA/sports-science
+  // convention); the analyzer measures km/h natively.
+  shotSpeedKmh?: number;
   onTarget?: boolean;
 }
 

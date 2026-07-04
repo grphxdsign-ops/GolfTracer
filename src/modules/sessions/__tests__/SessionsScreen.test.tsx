@@ -78,7 +78,7 @@ describe('SessionsScreen', () => {
     addShot({
       sport: 'soccer',
       quality: 'medium',
-      shotSpeedMph: 46.6,
+      shotSpeedKmh: 75.2,
       onTarget: true,
       at: now - 1,
     });
@@ -90,7 +90,7 @@ describe('SessionsScreen', () => {
     expect(screen.getAllByText('Golf')).toHaveLength(2);
     expect(screen.getByText('Soccer')).toBeTruthy();
     expect(screen.getByText('250 yd carry')).toBeTruthy();
-    expect(screen.getByText('47 mph')).toBeTruthy();
+    expect(screen.getByText('75 km/h')).toBeTruthy();
     expect(screen.getByText('152 yd carry')).toBeTruthy();
     // Quality badges wear their tones' labels.
     expect(screen.getByText('High')).toBeTruthy();

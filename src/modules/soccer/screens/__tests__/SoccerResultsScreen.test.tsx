@@ -41,17 +41,17 @@ describe('SoccerResultsScreen', () => {
     expect(screen.getByText('No soccer analysis yet')).toBeTruthy();
   });
 
-  it('renders the GOAL verdict, shot speed, contact distance, and angle table', () => {
+  it('renders the Goal verdict, shot speed, contact distance, and angle table', () => {
     useSportsSessionStore.getState().setSoccerResult(cannedSoccerResult());
     renderResults();
 
-    expect(screen.getByText('GOAL!')).toBeTruthy();
-    expect(screen.getByText(/Crossed the line 3\.97 m from the left post/)).toBeTruthy();
+    expect(screen.getByText('Goal')).toBeTruthy();
+    expect(screen.getByText(/Crossed the line ~4\.0 m from the left post/)).toBeTruthy();
     // Hero StatTile composition: label + demoted unit (content preserved).
     expect(screen.getByText('Peak shot speed')).toBeTruthy();
     expect(screen.getByText('km/h')).toBeTruthy();
     expect(
-      screen.getByText(/Ball distance to goal line at contact: 11\.9 m/),
+      screen.getByText(/Ball distance to goal line at contact: ~12 m/),
     ).toBeTruthy();
 
     // Pose-at-contact stage + joint-angle table rows.
@@ -91,7 +91,7 @@ describe('SoccerResultsScreen', () => {
       }),
     );
     renderResults();
-    expect(screen.getByText('NO GOAL')).toBeTruthy();
+    expect(screen.getByText('No goal')).toBeTruthy();
     expect(screen.getByText(/Crossed the goal plane outside/)).toBeTruthy();
   });
 
@@ -138,8 +138,8 @@ describe('SoccerResultsScreen', () => {
       onTarget: true,
       quality: 'high',
     });
-    // 75 km/h peak → ~47 mph.
-    expect(Math.round(shots[0]!.shotSpeedMph!)).toBe(47);
+    // History speaks the sport's canon unit: the analyzer's native km/h.
+    expect(Math.round(shots[0]!.shotSpeedKmh!)).toBe(75);
 
     // A re-render of the same analysis never double-records.
     fireEvent(screen.getByTestId('pose-stage'), 'layout', {

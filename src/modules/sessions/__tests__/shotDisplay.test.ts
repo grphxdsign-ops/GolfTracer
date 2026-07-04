@@ -52,8 +52,8 @@ describe('shotHeadline', () => {
 
   it('uses shot speed for soccer', () => {
     expect(
-      shotHeadline({ ...base, sport: 'soccer', shotSpeedMph: 46.6 }),
-    ).toBe('47 mph');
+      shotHeadline({ ...base, sport: 'soccer', shotSpeedKmh: 75.2 }),
+    ).toBe('75 km/h');
     expect(shotHeadline({ ...base, sport: 'soccer' })).toBeNull();
   });
 });

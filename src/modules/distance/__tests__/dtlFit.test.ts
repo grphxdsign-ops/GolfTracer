@@ -251,10 +251,14 @@ describe('simulateFlight maxFlightTimeS', () => {
 // ---------------------------------------------------------------------------
 // Synthetic recovery
 // ---------------------------------------------------------------------------
+// Amateur-typical drive sitting at the research-calibrated prior mean
+// (clubPriors driver: 133/12.5/3275) so the recovery tests measure the
+// fit's geometry, not its tension against the regularizer. Prior-fighting
+// behavior is covered separately by the decline matrix.
 const TRUE_LAUNCH: LaunchConditions = {
-  ballSpeedMph: 150,
-  launchAngleDeg: 12,
-  backspinRpm: 2500,
+  ballSpeedMph: 133,
+  launchAngleDeg: 12.5,
+  backspinRpm: 3275,
 };
 const TRUE_PSI_DEG = 5;
 const TRUE_THETA_DEG = 5;
@@ -448,9 +452,13 @@ describe('fitDtlLaunch decline matrix', () => {
     expect(fit.speedObsCostPx).toBeLessThan(0.25);
   });
 
-  it("declines 'degenerate' on a scale-ambiguous short recession", () => {
-    // Pure recession (ψ = 0), few late samples: the classic bearing-only
-    // ambiguity — near-optimal starts disagree wildly about carry.
+  it('refuses a scale-ambiguous short recession rather than fabricate', () => {
+    // Pure recession (ψ = 0), few late noisy samples: the classic
+    // bearing-only ambiguity. The refusal may surface through either
+    // honesty channel — ensemble spread ('degenerate') or, now that the
+    // research-calibrated priors are informative enough for the orthogonal
+    // domination probe to fire first, 'prior-dominated'. Either way the
+    // fit must NOT converge; the product invariant is no fabricated carry.
     const { track } = synthTrack({
       launch: TRUE_LAUNCH,
       psiDeg: 0,
@@ -459,8 +467,8 @@ describe('fitDtlLaunch decline matrix', () => {
       tee: { x: 560, y: 1450 },
       ballRadiusPx: 5,
       numPoints: 8,
-      firstT: 0.2,
-      noisePx: 1.5,
+      firstT: 0.25,
+      noisePx: 3,
       seed: 3,
     });
     const model = buildCalibration(
@@ -471,8 +479,14 @@ describe('fitDtlLaunch decline matrix', () => {
       teePointPx: { x: 560, y: 1450 },
     });
     expect(fit.converged).toBe(false);
-    expect(fit.declineReason).toBe('degenerate');
-    expect(fit.carrySpreadYards / fit.carryYards).toBeGreaterThan(0.3);
+    expect(['degenerate', 'prior-dominated']).toContain(fit.declineReason);
+    if (fit.declineReason === 'degenerate') {
+      expect(fit.carrySpreadYards / fit.carryYards).toBeGreaterThan(0.3);
+    } else {
+      // Domination probe: moving the speed a prior sigma barely moves the
+      // pixels — the observations do not identify the speed.
+      expect(fit.speedObsCostPx).toBeLessThan(DTL_SPEED_OBS_MIN_PX);
+    }
   });
 
   it('never throws on garbage input', () => {

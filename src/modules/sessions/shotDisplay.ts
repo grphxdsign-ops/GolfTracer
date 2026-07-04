@@ -40,8 +40,8 @@ export function sportName(sport: SportId): string {
 /** Headline stat: the one number that identifies the shot at a glance. */
 export function shotHeadline(shot: ShotRecord): string | null {
   if (shot.sport === 'soccer') {
-    return shot.shotSpeedMph !== undefined
-      ? `${Math.round(shot.shotSpeedMph)} mph`
+    return shot.shotSpeedKmh !== undefined
+      ? `${Math.round(shot.shotSpeedKmh)} km/h`
       : null;
   }
   if (shot.carryYards !== undefined) {

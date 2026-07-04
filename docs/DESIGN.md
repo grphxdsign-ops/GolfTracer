@@ -361,7 +361,48 @@ sports only, small glass tiles routing straight into each flow) →
 Sessions) → nothing else. Pipeline detail, full history, settings: all
 behind taps (Sessions screen, Settings sheet). Density lock (§4) applies.
 
-## 12. Speed is a feature — the 1–3 s analysis budget
+## 12. Per-sport stat canon (research-verified)
+
+Each sport speaks its own statistical language — units, precision, and the
+stat set are fitted per sport and never copy-pasted across sports. All
+numbers below were deep-researched against launch-monitor/broadcast
+conventions and adversarially fact-checked before shipping.
+
+### Golf (TrackMan / Toptracer consumer convention)
+
+| Stat | Unit | Precision |
+|---|---|---|
+| Carry / Total | yd | whole |
+| Apex | ft | whole |
+| Ball speed | mph | whole |
+| Launch angle | deg | 0.1 |
+| Spin | rpm | whole |
+| Flight time | s | 0.1 |
+
+Club priors in `clubPriors.ts` model a MID-TEENS-HANDICAP male amateur
+(TrackMan Combine "Average Golfer, 14.5"), not a Tour player — see the
+table's source comments. Deltas compare only to the user's own history.
+
+### Soccer (FIFA / sports-science convention)
+
+| Stat | Unit | Precision |
+|---|---|---|
+| Peak shot speed | km/h (canon everywhere: display, history, compare) | whole, wears "~" (monocular estimate) |
+| Distance to goal at contact | m | whole, wears "~" |
+| Goal-mouth crossing position | m from left post / height | 0.1 (≈10 cm honest bound) |
+| Verdict | Goal / No goal | sentence case, no exclamation |
+
+Typical adult-amateur shots run ~80–97 km/h, elite open play ~100–115 km/h
+— quality gates and copy stay inside plausible reality.
+
+### Coming-soon taglines (verified measurable from phone video)
+
+- Tennis: "Serve speed and placement" (SwingVision precedent; club serves
+  ~90–110 mph, ATP first serves ~115–120 mph avg).
+- Baseball: "Exit velocity and launch" (Blast Vision / SmartPitch
+  precedent; HS ~70s–80s mph EV, MLB avg ~88–89 mph, sweet-spot LA 8–32°).
+
+## 13. Speed is a feature — the 1–3 s analysis budget
 
 Nobody waits on a spinner while we admire our own pipeline.
 

@@ -7,7 +7,7 @@
  * emitting a silently-wrong arc, the pipeline grades the track ('high' |
  * 'medium' | 'low' | 'failed') so the UI can offer retry tips.
  *
- * The whole run is bounded by `timeBudgetMs` (DESIGN §12): each stage adapts
+ * The whole run is bounded by `timeBudgetMs` (DESIGN §13): each stage adapts
  * — stride, stop early, shrink the fallback window — rather than run long,
  * and the quality grade reflects only what was actually analyzed.
  */
@@ -66,7 +66,7 @@ export interface RunTrackingOptions {
   style?: Partial<TracerStyle>;
   onProgress?: (fraction: number) => void;
   /**
-   * Wall-clock budget for the whole run, ms (DESIGN §12). The pipeline adapts
+   * Wall-clock budget for the whole run, ms (DESIGN §13). The pipeline adapts
    * to finish inside it — frame striding past the 2 s prefix, an early
    * tracking stop at 92%, a fallback pass bounded to the remaining budget —
    * and never inflates the quality grade to hide the adaptation. Non-finite

@@ -16,6 +16,7 @@ import {
   fitRecedingLaunch,
   RECEDING_MIN_POINTS,
 } from '../estimate/recedingFit';
+import { CLUB_PRIORS } from '../physics/clubPriors';
 import { buildCalibration } from '../calibration/calibrate';
 import { focalLengthPxFromFov } from '../calibration/pinhole';
 import {
@@ -243,8 +244,9 @@ describe('fitRecedingLaunch', () => {
     const rfit = fitRecedingLaunch(track, model, 'driver');
     expect(rfit.converged).toBe(false);
     expect(rfit.declineReason).toBe('camera-angle');
-    // Falls back to the club prior means.
-    expect(rfit.launch.ballSpeedMph).toBe(150);
+    // Falls back to the club prior means (tracks the data table — the
+    // priors are research-calibrated and may be retuned).
+    expect(rfit.launch.ballSpeedMph).toBe(CLUB_PRIORS.driver.ballSpeedMph.mean);
   });
 
   it("declines short tracks with 'too-few-points'", () => {
