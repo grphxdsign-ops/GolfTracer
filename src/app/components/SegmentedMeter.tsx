@@ -34,7 +34,10 @@ export function SegmentedMeter({
   style,
 }: SegmentedMeterProps): React.JSX.Element {
   const clamped = Math.min(1, Math.max(0, progress));
-  const activeCount = Math.round(clamped * segments);
+  // Guards a bad caller-supplied count (0, negative, non-finite) from
+  // rendering an empty/crashing meter.
+  const safeSegments = Math.max(1, Math.round(segments));
+  const activeCount = Math.round(clamped * safeSegments);
 
   return (
     <View
@@ -45,7 +48,7 @@ export function SegmentedMeter({
       accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped * 100) }}
       style={[styles.row, style]}
     >
-      {Array.from({ length: segments }).map((_, i) => (
+      {Array.from({ length: safeSegments }).map((_, i) => (
         <View
           key={i}
           style={[styles.segment, i < activeCount ? styles.active : styles.inactive]}

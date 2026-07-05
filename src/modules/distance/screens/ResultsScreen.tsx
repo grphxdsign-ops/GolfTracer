@@ -9,7 +9,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -378,7 +377,7 @@ export function ResultsScreen() {
   const showDeltas = !isFallback && averages.count >= MIN_SHOTS_FOR_DELTA;
 
   return (
-    <ScrollView
+    <Animated.ScrollView
       style={sharedStyles.screen}
       contentContainerStyle={{ paddingBottom: spacing.md + insets.bottom }}
       onScroll={Animated.event(
@@ -485,7 +484,7 @@ export function ResultsScreen() {
         onPress={() => navigation.navigate('Home')}
         style={styles.homeAction}
       />
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 

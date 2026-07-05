@@ -190,6 +190,7 @@ describe('HomeScreen', () => {
     expect(within(card).getByText('Just now')).toBeTruthy();
 
     fireEvent.press(card);
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith('Sessions');
   });
 });

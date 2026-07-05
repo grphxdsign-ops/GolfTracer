@@ -21,6 +21,7 @@ export interface OnboardingDotsProps {
 export function OnboardingDots({ step }: OnboardingDotsProps): React.JSX.Element {
   return (
     <View
+      accessible
       accessibilityRole="progressbar"
       accessibilityLabel={`Step ${step} of ${ONBOARDING_STEP_COUNT}`}
       accessibilityValue={{ min: 1, max: ONBOARDING_STEP_COUNT, now: step }}
@@ -57,6 +58,10 @@ const styles = StyleSheet.create({
     // Upcoming steps: quiet glass, readable on the tier-0 background.
     backgroundColor: colors.overlay,
   },
+  // Intentionally the reverse of a tab bar's "active is brightest": this is
+  // a progress/completion line (DESIGN.md §10 audit spec), where the solid
+  // color reads as "done" and the current step is the dimmer marker —
+  // matching a video-scrub convention, not a state-selector one.
   segmentDone: {
     backgroundColor: colors.primary,
   },

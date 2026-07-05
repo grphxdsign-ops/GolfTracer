@@ -38,6 +38,9 @@ export interface CardHandoff {
 export function useCardHandoff(onComplete: () => void): CardHandoff {
   const reducedMotion = useReducedMotion();
   const progress = useSharedValue(0);
+  // Blocks a rapid double-tap from firing onComplete (navigate) twice while
+  // the ~150ms handoff is still in flight.
+  const triggered = useSharedValue(false);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: 1 - progress.value * 0.14,
@@ -45,20 +48,31 @@ export function useCardHandoff(onComplete: () => void): CardHandoff {
   }));
 
   const trigger = useCallback(() => {
+    if (triggered.value) {
+      return;
+    }
     if (reducedMotion) {
       onComplete();
       return;
     }
+    triggered.value = true;
     progress.value = withTiming(
       1,
       { duration: motion.duration.fast, easing: Easing.out(Easing.cubic) },
       (finished) => {
         if (finished) {
           runOnJS(onComplete)();
+          // Reset immediately: the source screen commonly stays mounted
+          // underneath the destination (stack navigators don't unmount the
+          // screen below), so without this the card would stay visually
+          // shrunk/faded if the user navigates back. The reset lands as the
+          // incoming screen's own transition covers it.
+          progress.value = 0;
+          triggered.value = false;
         }
       },
     );
-  }, [reducedMotion, onComplete, progress]);
+  }, [reducedMotion, onComplete, progress, triggered]);
 
   return { animatedStyle, trigger };
 }

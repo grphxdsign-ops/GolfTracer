@@ -9,7 +9,7 @@
  * reduce-motion aware.
  */
 import { useEffect, useMemo, useRef } from 'react';
-import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -201,7 +201,7 @@ export function HomeScreen() {
   const recentParts = latestShot ? shotHeadlineParts(latestShot) : null;
 
   return (
-    <ScrollView
+    <Animated.ScrollView
       style={styles.screen}
       contentContainerStyle={[
         styles.content,
@@ -339,7 +339,7 @@ export function HomeScreen() {
           </Text>
         )}
       </Animated.View>
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 

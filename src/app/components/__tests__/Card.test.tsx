@@ -2,6 +2,7 @@ import { Animated, Text } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
 import { Card } from '../Card';
+import * as reducedMotion from '../useReducedMotion';
 
 describe('Card', () => {
   it('renders children', () => {
@@ -64,5 +65,18 @@ describe('Card', () => {
     const [highlight] = screen.getByTestId('card').props.children;
     expect(highlight).toBeTruthy();
     expect(highlight.props.pointerEvents).toBe('none');
+  });
+
+  it('drops the reactive highlight under reduce-motion even with scrollY', () => {
+    jest.spyOn(reducedMotion, 'useReducedMotion').mockReturnValue(true);
+    const scrollY = new Animated.Value(0);
+    render(
+      <Card testID="card" scrollY={scrollY}>
+        <Text>Body</Text>
+      </Card>,
+    );
+    const [highlight] = screen.getByTestId('card').props.children;
+    expect(highlight).toBeNull();
+    jest.restoreAllMocks();
   });
 });

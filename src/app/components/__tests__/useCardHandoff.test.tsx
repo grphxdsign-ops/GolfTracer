@@ -30,4 +30,16 @@ describe('useCardHandoff', () => {
     result.current.trigger();
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
+
+  it('resets after completion so a later tap can re-trigger it', () => {
+    // The mock's withTiming resolves synchronously, so this can't observe
+    // the re-entry guard blocking a tap *during* the animation — only that
+    // the guard/progress reset leaves the hook usable for a subsequent,
+    // separate tap (e.g. after navigating back to the source screen).
+    const onComplete = jest.fn();
+    const { result } = renderHook(() => useCardHandoff(onComplete));
+    result.current.trigger();
+    result.current.trigger();
+    expect(onComplete).toHaveBeenCalledTimes(2);
+  });
 });
