@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef } from 'react';
 import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Reanimated from 'react-native-reanimated';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -25,7 +26,7 @@ import {
   formatRelativeWhen,
   qualityLabel,
   qualityTone,
-  shotHeadline,
+  shotHeadlineParts,
   sportName,
 } from '../../modules/sessions/shotDisplay';
 import { useSessionStore } from '../../state/sessionStore';
@@ -35,10 +36,13 @@ import {
   Badge,
   Button,
   Card,
+  Chevron,
   ProgressSteps,
   ScreenHeader,
   SectionLabel,
   SportIcon,
+  StatTile,
+  useCardHandoff,
   useReducedMotion,
 } from '../components';
 import type { ProgressStep } from '../components';
@@ -105,6 +109,9 @@ export function HomeScreen() {
   const accountName = useProfileStore((s) => s.account?.name ?? null);
   const chosenSports = useProfileStore((s) => s.sports);
   const latestShot = useHistoryStore((s) => s.shots[0] ?? null);
+  // Drives the recent-session hero card's reactive catchlight (DESIGN.md
+  // §5/§7) — never an autonomous loop, only moves while the user scrolls.
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   const [
     headerStyle,
@@ -141,6 +148,9 @@ export function HomeScreen() {
   // 'Sessions' is mounted through App.tsx's route cast (like navSport).
   const openSessions = () =>
     (navigation as { navigate(route: string): void }).navigate('Sessions');
+  // The one card→detail handoff on this screen (DESIGN.md §5/§7) — Home's
+  // hero card scales down into the Sessions list rather than cutting away.
+  const recentHandoff = useCardHandoff(openSessions);
 
   // Pipeline detail only earns screen space while a session is in flight
   // (§4 density lock) — a loaded video or a tracking pass underway.
@@ -188,7 +198,7 @@ export function HomeScreen() {
     },
   ];
 
-  const recentHeadline = latestShot ? shotHeadline(latestShot) : null;
+  const recentParts = latestShot ? shotHeadlineParts(latestShot) : null;
 
   return (
     <ScrollView
@@ -197,6 +207,11 @@ export function HomeScreen() {
         styles.content,
         { paddingBottom: insets.bottom + spacing.md },
       ]}
+      onScroll={Animated.event(
+        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+        { useNativeDriver: true },
+      )}
+      scrollEventThrottle={16}
     >
       <Animated.View style={headerStyle}>
         <ScreenHeader title="Tracr" subtitle={subtitle} />
@@ -279,7 +294,7 @@ export function HomeScreen() {
                 Your swing, morphed toward its ideal
               </Text>
             </View>
-            <Text style={styles.toolChevron}>›</Text>
+            <Chevron color={colors.textDisabled} />
           </View>
         </Card>
       </Animated.View>
@@ -287,10 +302,12 @@ export function HomeScreen() {
       <Animated.View style={recentStyle}>
         <SectionLabel>Recent session</SectionLabel>
         {latestShot ? (
+          <Reanimated.View style={recentHandoff.animatedStyle}>
           <Card
-            onPress={openSessions}
+            onPress={recentHandoff.trigger}
             testID="home-recent-card"
             accessibilityLabel={`${sportName(latestShot.sport)} session, ${formatRelativeWhen(latestShot.at)}`}
+            scrollY={scrollY}
           >
             <View style={styles.recentTopRow}>
               <Text style={typography.subtitle}>
@@ -301,8 +318,13 @@ export function HomeScreen() {
               </Text>
             </View>
             <View style={styles.recentStatsRow}>
-              {recentHeadline ? (
-                <Text style={styles.recentStat}>{recentHeadline}</Text>
+              {recentParts ? (
+                <StatTile
+                  size="standard"
+                  label={recentParts.label}
+                  value={recentParts.value}
+                  unit={recentParts.unit}
+                />
               ) : null}
               <Badge
                 label={qualityLabel(latestShot.quality)}
@@ -310,6 +332,7 @@ export function HomeScreen() {
               />
             </View>
           </Card>
+          </Reanimated.View>
         ) : (
           <Text style={styles.noSessions}>
             No sessions yet — record your first shot.
@@ -370,11 +393,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 2,
   },
-  toolChevron: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textDisabled,
-  },
   recentTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -390,15 +408,8 @@ const styles = StyleSheet.create({
   recentStatsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     marginTop: spacing.sm,
-  },
-  recentStat: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '600',
-    color: colors.text,
-    fontVariant: ['tabular-nums'],
   },
   noSessions: {
     fontSize: 15,

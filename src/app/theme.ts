@@ -160,7 +160,7 @@ export const typography = StyleSheet.create({
 /** Motion tokens — DESIGN.md §5. Transform/opacity only, native driver. */
 export const motion = {
   duration: {
-    press: 100,
+    press: 90,
     fast: 150,
     base: 200,
     gentle: 250,
@@ -172,8 +172,24 @@ export const motion = {
     exit: Easing.in(Easing.cubic),
     standard: Easing.out(Easing.cubic),
   },
+  /**
+   * Named spring configs (DESIGN.md §5) — single source so Button/SportTile
+   * never duplicate the numbers. `press` is the softened 2026 pass: damping
+   * raised 22→30 (ζ≈0.75, ~3% overshoot, "snappy without being abrupt")
+   * from the punchier ζ≈0.55 launch value, which read closer to a 2020
+   * Framer demo than a restrained 2026 flagship.
+   */
+  spring: {
+    press: { stiffness: 400, damping: 30, mass: 1 },
+  },
 } as const;
 
+// `sharedStyles` is layout-primitive only (screen/centered) — visual
+// components (card, button) live in the kit (Card, Button) and must not be
+// re-implemented here. The scaffold's original card/button/buttonText*
+// entries were deleted: zero callers remained (superseded by <Card>/
+// <Button> everywhere), and their token values had already drifted from
+// the real components (DESIGN.md §2/§5).
 export const sharedStyles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -187,33 +203,6 @@ export const sharedStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.lg,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.borderSubtle,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: radii.pill,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  buttonDisabled: {
-    backgroundColor: colors.surfaceRaised,
-  },
-  buttonText: {
-    color: colors.textOnAccent,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonTextDisabled: {
-    color: colors.textDisabled,
   },
 });
 

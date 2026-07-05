@@ -50,19 +50,14 @@ describe('theme compat contract', () => {
     }
   });
 
-  it('keeps all sharedStyles keys', () => {
-    const keys = [
-      'screen',
-      'centered',
-      'card',
-      'button',
-      'buttonDisabled',
-      'buttonText',
-      'buttonTextDisabled',
-    ] as const;
-    for (const key of keys) {
+  it('keeps sharedStyles as layout-primitive only', () => {
+    // card/button/buttonText* were removed (dead — superseded by the kit's
+    // Card/Button; DESIGN.md §7). sharedStyles stays layout-only.
+    for (const key of ['screen', 'centered'] as const) {
       expect(sharedStyles[key]).toBeTruthy();
     }
+    expect('card' in sharedStyles).toBe(false);
+    expect('button' in sharedStyles).toBe(false);
   });
 
   it('keeps legacy navigationTheme keys', () => {
@@ -72,7 +67,9 @@ describe('theme compat contract', () => {
   });
 
   it('exposes the new token groups', () => {
-    expect(motion.duration.press).toBe(100);
+    // 90ms — DESIGN.md §5 press-pop timing (2026 softened-spring pass).
+    expect(motion.duration.press).toBe(90);
+    expect(motion.spring.press).toEqual({ stiffness: 400, damping: 30, mass: 1 });
     expect(tracer.head).toBeTruthy();
     expect(colors.stage).toBeTruthy();
     expect(radii.pill).toBe(999);

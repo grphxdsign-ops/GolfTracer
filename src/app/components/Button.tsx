@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
-import { colors, radii, spacing } from '../theme';
+import { alpha, colors, motion, radii, spacing } from '../theme';
 import { useReducedMotion } from './useReducedMotion';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -83,15 +83,16 @@ export function Button({
   const inactive = disabled || loading;
 
   // Press pop (DESIGN.md §5): press-in is a quick ease-out timing — never a
-  // spring on the way down; release is a spring with exactly one ~0.3%
-  // overshoot. Reduce-motion skips the scale entirely (color swap only).
+  // spring on the way down; release is the shared softened spring (ζ≈0.75,
+  // ~3% overshoot — "snappy without being abrupt", not a 2020 Framer-demo
+  // bounce). Reduce-motion skips the scale entirely (color swap only).
   const pressIn = () => {
     if (reducedMotion) {
       return;
     }
     Animated.timing(scale, {
       toValue: 0.97,
-      duration: 90,
+      duration: motion.duration.press,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
@@ -103,9 +104,7 @@ export function Button({
     }
     Animated.spring(scale, {
       toValue: 1,
-      stiffness: 400,
-      damping: 22,
-      mass: 1,
+      ...motion.spring.press,
       useNativeDriver: true,
     }).start();
   };
@@ -130,9 +129,11 @@ export function Button({
           styles.base,
           sizeStyles[size],
           variant === 'secondary' && styles.secondaryBorder,
-          // Primary CTA carries the brand glow; pressed = flatten (glow
-          // collapses, fill darkens one step) — DESIGN.md §5.
-          variant === 'primary' && !pressed && !inactive && styles.primaryGlow,
+          // Primary CTA carries a precise 1px edge + top catchlight, never
+          // a blurred colored shadow (2026 audit: ambient glow reads as a
+          // dated template, self-contained edge lighting reads premium —
+          // DESIGN.md §5). Pressed = flatten: edge drops, fill darkens.
+          variant === 'primary' && !pressed && !inactive && styles.primaryEdge,
           { backgroundColor: pressed ? palette.bgPressed : palette.bg },
           inactive && styles.inactive,
         ]}
@@ -176,12 +177,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
-  primaryGlow: {
-    shadowColor: colors.primary,
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
+  primaryEdge: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: alpha(colors.primary, 0.22),
+    borderTopColor: colors.glassHighlight,
   },
   inactive: {
     opacity: 0.4,

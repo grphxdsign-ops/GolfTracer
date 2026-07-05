@@ -14,7 +14,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { SportEntry } from '../../modules/sports/sportCatalog';
-import { alpha, colors, radii, spacing, typography } from '../theme';
+import { alpha, colors, motion, radii, spacing, typography } from '../theme';
 import { Badge } from './Badge';
 import { SportIcon } from './SportIcon';
 import { useReducedMotion } from './useReducedMotion';
@@ -78,7 +78,7 @@ export function SportTile({
     }
     Animated.timing(scale, {
       toValue: 0.98,
-      duration: 90,
+      duration: motion.duration.press,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
@@ -90,9 +90,7 @@ export function SportTile({
     }
     Animated.spring(scale, {
       toValue: 1,
-      stiffness: 400,
-      damping: 22,
-      mass: 1,
+      ...motion.spring.press,
       useNativeDriver: true,
     }).start();
   };
@@ -119,14 +117,16 @@ export function SportTile({
           unavailable && styles.tileUnavailable,
         ]}
       >
-        <SportIcon sport={sport.icon} size={ICON_SIZE} />
-        <View style={styles.copy}>
+        <View style={unavailable && styles.contentDim}>
+          <SportIcon sport={sport.icon} size={ICON_SIZE} />
+        </View>
+        <View style={[styles.copy, unavailable && styles.contentDim]}>
           <Text style={typography.subtitle}>{sport.name}</Text>
           <Text style={[typography.label, styles.tagline]}>{sport.tagline}</Text>
         </View>
         {unavailable ? (
           <View style={styles.corner}>
-            <Badge label="Coming soon" />
+            <Badge label="Coming soon" outline />
           </View>
         ) : null}
         {selected ? (
@@ -170,8 +170,15 @@ const styles = StyleSheet.create({
   tilePressed: {
     backgroundColor: colors.surfaceRaised,
   },
+  // Recedes further than the resting glass fill instead of dimming the
+  // whole tile (2026 audit: a uniformly-dimmed dark badge over dark glass
+  // read muddy/half-broken) — same warm-cream hue as colors.surface, at a
+  // fainter opacity so the tile visibly sits behind selectable ones.
   tileUnavailable: {
-    opacity: 0.45,
+    backgroundColor: 'rgba(255,251,235,0.02)',
+  },
+  contentDim: {
+    opacity: 0.55,
   },
   copy: {
     flex: 1,

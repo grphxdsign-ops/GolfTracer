@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
   pill: {
     borderRadius: radii.pill,
     height: 32,
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,

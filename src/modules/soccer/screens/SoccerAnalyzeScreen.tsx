@@ -5,7 +5,7 @@
  * sports session store, and auto-navigates to the soccer results.
  *
  * Mirrors the golf AnalyzeScreen structure for family consistency:
- * empty → EmptyState, running → staged ProgressBar, error → specific tips
+ * empty → EmptyState, running → staged SegmentedMeter, error → specific tips
  * with a single retry CTA (DESIGN.md §1: blame-free copy with a next step).
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -18,8 +18,8 @@ import {
   Button,
   Card,
   EmptyState,
-  ProgressBar,
   ScreenHeader,
+  SegmentedMeter,
 } from '../../../app/components';
 import { useSportsSessionStore } from '../../sports/sportsSessionStore';
 import { navigateSport } from '../../sports/navSport';
@@ -122,7 +122,7 @@ export function SoccerAnalyzeScreen() {
     <View style={sharedStyles.centered}>
       <Text style={typography.heading}>Analyzing the shot</Text>
       <Text style={styles.pct}>{pct}%</Text>
-      <ProgressBar
+      <SegmentedMeter
         progress={progress}
         accessibilityLabel="Soccer shot analysis progress"
         style={styles.bar}

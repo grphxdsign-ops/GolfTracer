@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 
-import { colors, motion, radii } from '../theme';
+import { colors, motion, radii, spacing } from '../theme';
 import { useReducedMotion } from './useReducedMotion';
 
 export interface SegmentedControlOption {
@@ -80,6 +80,9 @@ export function SegmentedControl({
             accessibilityLabel={opt.accessibilityLabel}
             accessibilityState={{ selected }}
             onPress={() => onChange(opt.value)}
+            // 36pt visual segment + hitSlop = >=44pt effective touch target
+            // (HIG minimum), matching Button/Chip's approach.
+            hitSlop={{ top: spacing.xs, bottom: spacing.xs }}
             style={styles.segment}
           >
             <Text style={[styles.label, selected && styles.labelSelected]}>
@@ -96,15 +99,15 @@ const styles = StyleSheet.create({
   track: {
     flexDirection: 'row',
     backgroundColor: colors.stage,
-    borderRadius: radii.sm + 2,
-    padding: 2,
+    borderRadius: radii.sm,
+    padding: spacing.xs,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.borderSubtle,
   },
   thumb: {
     position: 'absolute',
-    top: 2,
-    left: 2,
+    top: spacing.xs,
+    left: spacing.xs,
     height: 36,
     // Tier-3 glass so the thumb still reads over the stage-dark track.
     backgroundColor: colors.overlay,

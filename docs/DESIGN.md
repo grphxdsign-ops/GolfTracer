@@ -213,8 +213,8 @@ Everything else is ≤250ms and out of the way.
 
 | Token | Value | Use |
 |---|---|---|
-| `motion.duration.press` | 100 | Button press scale in/out |
-| `motion.duration.fast` | 150 | Segmented thumb slide, selection swaps |
+| `motion.duration.press` | 90 | Button press scale in/out |
+| `motion.duration.fast` | 150 | Segmented thumb slide, selection swaps, card→detail handoff (§11.1) |
 | `motion.duration.base` | 200 | Row/element entrance (opacity + translateY 8→0), crossfades |
 | `motion.duration.gentle` | 250 | Sheet/expandable open (exit ≈ 0.75×) |
 | `motion.duration.countUp` | 700 | Hero stat count-up (once, on reveal) |
@@ -228,22 +228,38 @@ Everything else is ≤250ms and out of the way.
 
 Rules:
 - Animate `transform`/`opacity` only, native driver. Never width/height/top/left.
-- **Press pop (Framer-grade, the sanctioned exception):** discrete CTAs
-  (`Button`) and hero selection tiles (`SportTile`) press with a two-beat
-  asymmetric interaction — press-in: `Animated.timing` scale → **0.97**
-  (tiles: 0.98 — big surfaces read absolute pixel travel) over **90ms**,
-  `Easing.out(Easing.quad)`, never a spring on the way down; release:
-  `Animated.spring` to 1 with `{ stiffness: 400, damping: 22, mass: 1 }` —
-  exactly one ~0.3% overshoot, settled ≈350ms. Damping ratio stays in
-  0.55–0.8: one visible overshoot is premium, two oscillations is toy.
-  Selection commits may pop via velocity injection
+- **Press pop (the sanctioned exception):** discrete CTAs (`Button`) and
+  hero selection tiles (`SportTile`) press with a two-beat asymmetric
+  interaction — press-in: `Animated.timing` scale → **0.97** (tiles: 0.98 —
+  big surfaces read absolute pixel travel) over `motion.duration.press`
+  (90ms), `Easing.out(Easing.quad)`, never a spring on the way down;
+  release: `Animated.spring` to 1 with `motion.spring.press`
+  (`{ stiffness: 400, damping: 30, mass: 1 }`, single source in `theme.ts` —
+  never duplicate the numbers inline). Damping ratio ζ≈0.75 (~3%
+  overshoot, settled ≈270ms) — "snappy without being abrupt" — reads more
+  restrained than the launch tuning's ζ≈0.55 (~10% overshoot, ≈350ms),
+  which read closer to a 2020 Framer demo than a 2026 flagship. Damping
+  ratio stays in
+  0.65–0.8: one barely-visible overshoot is premium, two oscillations is
+  toy. Selection commits may pop via velocity injection
   (`{ toValue: 1, velocity: 1.5, stiffness: 350, damping: 20 }`).
   Reduce-motion: instant color swap only.
-- **Primary CTA glow:** the filled primary button carries a brand glow
-  (`shadowColor: primary, shadowOpacity 0.35, shadowRadius 16, offset y 6`;
-  Android `elevation 8`). Pressed = flatten: glow collapses and the fill
+- **Primary CTA edge:** the filled primary button carries a precise 1px
+  translucent-green border (`alpha(colors.primary, 0.22)`) with a top-edge
+  `glassHighlight` catchlight — never a blurred colored `shadowRadius`
+  glow, which reads as a muddy, low-res halo on a dark background (2026
+  design audit finding). Pressed = flatten: the edge drops and the fill
   darkens one step. Glass buttons press by *lightening* one glass tier —
   never opacity-dimming.
+- **Reactive catchlight (scroll-driven, not looping):** a screen's ONE
+  hero `Card` may wire its top-edge catchlight to the parent `ScrollView`'s
+  native-driven scroll position (`Card`'s `scrollY` prop, `Animated.modulo`
+  + triangle-wave interpolation) so it subtly brightens/dims as the user
+  scrolls past — Linear's reactive-highlight technique, since static glass
+  reads flat. This is interaction-driven, not an autonomous loop, so it
+  does not trip the no-looping-pulses rule below. Reserve for one hero card
+  per screen (Home's recent-session card, Results' hero card) — every card
+  doing this is noise, not a signature.
 - No bounce/overshoot on anything touched repeatedly or continuously
   (record control, nav, segments, scrubber, steppers). Scrubber = zero lag, 1:1.
 - Stagger only for a genuine list-arrival moment: ≤5 items × 60ms, total <400ms.
@@ -299,18 +315,21 @@ built screen-local and reported as gaps.
 | Component | Purpose |
 |---|---|
 | `Button` | primary / secondary / ghost / danger variants; pill; Animated press scale; loading + disabled states |
-| `Card` | tier-1 surface container, `raised` variant, optional pressable |
+| `Card` | tier-1 surface container, `raised` variant, optional pressable, optional `scrollY`-driven reactive catchlight (§5) |
 | `StatTile` | tabular numeral + demoted unit + label; `hero` / `standard` / `compact` sizes; `approx` tell |
 | `ScreenHeader` | in-content title (28/700) + subtitle block |
 | `SectionLabel` | 13/600 muted sentence-case section marker |
-| `Badge` | pill status tag, tone-tinted (neutral/success/warning/danger/accent) |
+| `Badge` | pill status tag, tone-tinted (neutral/success/warning/danger/accent); `outline` variant for muted/unavailable states |
 | `Chip` | pill stat or selectable chip (label + optional value, selected ring) |
+| `Chevron` | vector chevron/arrow (border-corner technique) — the only sanctioned disclosure/trend indicator; never a raw text glyph (§8) |
 | `SegmentedControl` | sliding-thumb segment row (replaces ad-hoc rows in Import/Calibration) |
+| `SegmentedMeter` | discrete N-segment tick track for science-grade metrics (confidence, staged tracking progress) — reads as measurement, not a battery bar |
 | `EmptyState` | title + one-line explanation + single primary action |
 | `ProgressSteps` | vertical pipeline steps (done/active/todo nodes + detail text) |
-| `ProgressBar` | determinate bar, `accessibilityRole="progressbar"`, scaleX-animated fill |
+| `ProgressBar` | determinate bar, `accessibilityRole="progressbar"`, scaleX-animated fill — reserved for genuinely continuous progress (e.g. byte upload); ticked metrics use `SegmentedMeter` instead |
 | `Skeleton` | layout-shaped loading block, gentle opacity loop, reduce-motion aware |
 | `useReducedMotion` | shared hook wrapping `AccessibilityInfo.isReduceMotionEnabled` |
+| `useCardHandoff` | Reanimated-driven card→detail exit cue for a screen's one primary drill-in tap (§11.1) |
 
 Full prop contracts live in the kit implementation spec (workflow doc); this
 table is the canonical inventory.
@@ -334,6 +353,8 @@ table is the canonical inventory.
       (tier-3 `overlay` fill), broadcast-style — not as a row below it.
 - [ ] No generic centered spinners — skeletons/progress matching final layout.
 - [ ] No `Alert.alert` as default error surface — inline, specific, blame-free copy with a next step.
+- [ ] No raw keyboard-glyph chevrons/arrows (`›`, `▸`, `▾`, `▲`, `▼`) — they
+      scale and baseline-align poorly. Use the `Chevron` kit component.
 - [ ] No modal for simple actions; no bouncing/pulsing/looping decoration.
 - [ ] Radius rule (§4) applied by shape class, never per-component whim.
 - [ ] Tabular figures on every aligning/updating number.
@@ -364,7 +385,10 @@ table is the canonical inventory.
 
 ## 10. Onboarding — first launch only
 
-Flow (each step is its own screen; back always works; progress dots at top):
+Flow (each step is its own screen; back always works; a segmented progress
+line at top — `OnboardingDots`, five equal segments, 2px, done/active/todo
+states — communicates step progress; round pagination dots read as a
+generic template, 2026 design audit finding):
 
 1. **Welcome** — Tracr wordmark, one line of value ("Trace every shot."),
    single CTA "Get started". No carousel, no marketing slides.
@@ -395,9 +419,39 @@ Home is a hub, not a dashboard: quick actions first, everything else is a
 drill-in. Order: greeting header (first name if known) → **Record** (the
 one primary CTA) + Upload secondary → "Your sports" shortcut row (chosen
 sports only, small glass tiles routing straight into each flow) →
-**Recent session** (single latest-shot glass card with 2 stats, tap →
-Sessions) → nothing else. Pipeline detail, full history, settings: all
-behind taps (Sessions screen, Settings sheet). Density lock (§4) applies.
+**Recent session** (single latest-shot glass card, tap → Sessions) →
+nothing else. Pipeline detail, full history, settings: all behind taps
+(Sessions screen, Settings sheet). Density lock (§4) applies.
+
+**Recent session card layout:** top row — session title left
+(`sportName`, `subtitle`), relative time right (`caption`, muted,
+tabular). Bottom row (`marginTop: sm`) — the hero metric left as a
+`StatTile` `standard` (value + demoted unit + metric label, e.g. "241 yd
+Carry"), quality badge right. The hero metric gets its own row and a
+proportionally bigger numeral than the surrounding metadata — flat,
+same-weight rows read as a spec sheet, not a performance card (2026 design
+audit finding). This is the screen's one hero `Card` — it carries the
+scroll-driven reactive catchlight (§5).
+
+### 11.1 Card→detail continuity (handoff)
+
+Native-stack is frozen (`App.tsx`) — no custom cross-screen transition
+interpolator, so there is no true shared-element morph between a card and
+its detail screen. `useCardHandoff` (Reanimated) approximates continuity
+with a same-screen exit cue: on confirm-press the source card scales to
+0.96× and fades to ~0.86 opacity over `motion.duration.fast`, *then*
+navigation fires — reduce-motion skips straight to navigation. Built on
+Reanimated rather than core `Animated` specifically because the animation
+must visibly complete before triggering navigation, and Reanimated runs it
+on the UI thread, immune to the JS-thread congestion the navigation
+transition itself causes (exactly when a bridge-driven `Animated` callback
+tends to fire late). The destination screen pairs this with its own mount
+entrance (fade + translateY(6→0), reduce-motion aware) so the two halves
+read as one continuous motion rather than a hard cut.
+
+Scope: one primary card→detail tap per screen (Home's recent-session card
+→ Sessions) — same restraint as the reactive catchlight. Not a blanket
+replacement for `onPress`; most taps stay instant.
 
 ## 12. Per-sport stat canon (research-verified)
 

@@ -37,23 +37,51 @@ export function sportName(sport: SportId): string {
   return SPORT_CATALOG.find((entry) => entry.id === sport)?.name ?? sport;
 }
 
-/** Headline stat: the one number that identifies the shot at a glance. */
-export function shotHeadline(shot: ShotRecord): string | null {
+export interface ShotHeadlineParts {
+  value: string;
+  unit: string;
+  /** Metric name (e.g. "Carry", "Ball speed") — the StatTile caption for
+   * layouts that give the number its own row (Home's recent-session hero). */
+  label: string;
+}
+
+/** Trailing word `shotHeadline`'s flat string adds after the unit, keyed by
+ * the metric label — only carry/total distinguish themselves that way. */
+const HEADLINE_SUFFIX: Partial<Record<string, string>> = {
+  Carry: 'carry',
+  Total: 'total',
+};
+
+/** Structured value/unit/label split of the headline stat, for layouts
+ * (Home's recent-session hero) that give the number its own row. */
+export function shotHeadlineParts(shot: ShotRecord): ShotHeadlineParts | null {
   if (shot.sport === 'soccer') {
     return shot.shotSpeedKmh !== undefined
-      ? `${Math.round(shot.shotSpeedKmh)} km/h`
+      ? { value: String(Math.round(shot.shotSpeedKmh)), unit: 'km/h', label: 'Shot speed' }
       : null;
   }
   if (shot.carryYards !== undefined) {
-    return `${Math.round(shot.carryYards)} yd carry`;
+    return { value: String(Math.round(shot.carryYards)), unit: 'yd', label: 'Carry' };
   }
   if (shot.totalYards !== undefined) {
-    return `${Math.round(shot.totalYards)} yd total`;
+    return { value: String(Math.round(shot.totalYards)), unit: 'yd', label: 'Total' };
   }
   if (shot.ballSpeedMph !== undefined) {
-    return `${Math.round(shot.ballSpeedMph)} mph`;
+    return { value: String(Math.round(shot.ballSpeedMph)), unit: 'mph', label: 'Ball speed' };
   }
   return null;
+}
+
+/** Headline stat: the one number that identifies the shot at a glance. */
+export function shotHeadline(shot: ShotRecord): string | null {
+  const parts = shotHeadlineParts(shot);
+  if (!parts) {
+    return null;
+  }
+  const suffix = HEADLINE_SUFFIX[parts.label];
+  return suffix
+    ? `${parts.value} ${parts.unit} ${suffix}`
+    : `${parts.value} ${parts.unit}`;
 }
 
 const QUALITY_META: Record<

@@ -109,7 +109,7 @@ describe('SportTile', () => {
     expect(style.minHeight).toBe(104);
   });
 
-  it('dims, disables, and badges unavailable sports', () => {
+  it('recedes, disables, and badges unavailable sports', () => {
     const onPress = jest.fn();
     render(
       <SportTile
@@ -122,8 +122,11 @@ describe('SportTile', () => {
     const tile = screen.getByRole('button', { name: /Tennis/ });
     expect(tile.props.accessibilityState.disabled).toBe(true);
     expect(screen.getByText('Coming soon')).toBeTruthy();
+    // Recedes via a fainter fill, not a whole-tile opacity dim (2026 audit:
+    // dimming a dark badge over dark glass read muddy/half-broken).
     const style = StyleSheet.flatten(tile.props.style);
-    expect(style.opacity).toBe(0.45);
+    expect(style.opacity).toBeUndefined();
+    expect(style.backgroundColor).toBe('rgba(255,251,235,0.02)');
     fireEvent.press(tile);
     expect(onPress).not.toHaveBeenCalled();
   });

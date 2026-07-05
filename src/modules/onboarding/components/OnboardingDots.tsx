@@ -1,9 +1,11 @@
 /**
- * OnboardingDots — module-local progress dots for the five-step first-launch
- * flow (DESIGN.md §10: "progress dots at top"). Static per screen — each
- * step is its own screen, so there is nothing to animate; the active dot is
- * the single saturated accent allowed by the density rules only when no
- * other primary-filled element is nearby (the CTA glow stays the hero).
+ * OnboardingDots — module-local segmented progress line for the five-step
+ * first-launch flow (DESIGN.md §10). Static per screen — each step is its
+ * own screen, so there is nothing to animate. Despite the name (kept for
+ * import stability across the five onboarding screens), this renders a
+ * continuous line of five equal segments, not circular dots — round
+ * pagination dots read as a generic template (2026 design audit finding);
+ * a segmented line communicates step progress, not just position.
  */
 import { StyleSheet, View } from 'react-native';
 
@@ -30,9 +32,9 @@ export function OnboardingDots({ step }: OnboardingDotsProps): React.JSX.Element
           <View
             key={index}
             style={[
-              styles.dot,
-              index < step && styles.dotDone,
-              index === step && styles.dotActive,
+              styles.segment,
+              index < step && styles.segmentDone,
+              index === step && styles.segmentActive,
             ]}
           />
         );
@@ -45,21 +47,20 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: spacing.sm,
+    gap: spacing.xs,
     marginBottom: spacing.lg,
   },
-  dot: {
-    width: 6,
-    height: 6,
+  segment: {
+    flex: 1,
+    height: 2,
     borderRadius: radii.pill,
     // Upcoming steps: quiet glass, readable on the tier-0 background.
     backgroundColor: colors.overlay,
   },
-  dotDone: {
-    backgroundColor: alpha(colors.primary, 0.4),
-  },
-  dotActive: {
-    width: 18,
+  segmentDone: {
     backgroundColor: colors.primary,
+  },
+  segmentActive: {
+    backgroundColor: alpha(colors.primary, 0.4),
   },
 });

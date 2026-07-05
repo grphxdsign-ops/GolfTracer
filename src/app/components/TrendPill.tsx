@@ -11,6 +11,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { alpha, colors, radii, spacing } from '../theme';
+import { Chevron } from './Chevron';
 
 export interface TrendPillProps {
   /** Signed change versus the comparison value (e.g. +12, -3.5). */
@@ -55,7 +56,9 @@ export function TrendPill({
       ? { text: colors.success, bg: alpha(colors.success, 0.16) }
       : { text: colors.danger, bg: alpha(colors.danger, 0.16) };
 
-  const arrow = even ? '→' : up ? '↑' : '↓';
+  // Diagonal vector chevron (DESIGN.md §8: no raw keyboard-glyph
+  // indicators) — flat/right for "even", up-right/down-right for a trend.
+  const arrowRotateDeg = even ? 0 : up ? -45 : 45;
   const magnitude = even ? 'even' : format(Math.abs(delta));
   const spokenUnit = unit ? ` ${unit}` : '';
   const accessibilityLabel = even
@@ -69,7 +72,15 @@ export function TrendPill({
       accessibilityLabel={accessibilityLabel}
       style={[styles.pill, { backgroundColor: tint.bg }]}
     >
-      <Text style={[styles.arrow, { color: tint.text }]}>{arrow}</Text>
+      <View style={styles.arrow}>
+        <Chevron
+          testID={testID ? `${testID}-arrow` : undefined}
+          rotateDeg={arrowRotateDeg}
+          size={11}
+          strokeWidth={1.3}
+          color={tint.text}
+        />
+      </View>
       <Text style={[styles.magnitude, { color: tint.text }]}>{magnitude}</Text>
       {!even && unit ? (
         <Text style={[styles.unit, { color: tint.text }]}>{unit}</Text>
@@ -81,16 +92,13 @@ export function TrendPill({
 const styles = StyleSheet.create({
   pill: {
     borderRadius: radii.pill,
-    paddingHorizontal: 10,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
   },
   arrow: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '600',
     marginRight: spacing.xs,
   },
   magnitude: {
@@ -103,7 +111,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '500',
-    marginLeft: 3,
+    marginLeft: spacing.xs,
     opacity: 0.8,
   },
 });

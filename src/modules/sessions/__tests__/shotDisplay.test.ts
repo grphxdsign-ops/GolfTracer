@@ -9,6 +9,7 @@ import {
   qualityLabel,
   qualityTone,
   shotHeadline,
+  shotHeadlineParts,
   sportName,
 } from '../shotDisplay';
 
@@ -55,6 +56,36 @@ describe('shotHeadline', () => {
       shotHeadline({ ...base, sport: 'soccer', shotSpeedKmh: 75.2 }),
     ).toBe('75 km/h');
     expect(shotHeadline({ ...base, sport: 'soccer' })).toBeNull();
+  });
+});
+
+describe('shotHeadlineParts', () => {
+  const base: ShotRecord = { id: 'x', at: 0, sport: 'golf', quality: 'high' };
+
+  it('splits value, unit, and metric label for golf', () => {
+    expect(shotHeadlineParts({ ...base, carryYards: 241.4 })).toEqual({
+      value: '241',
+      unit: 'yd',
+      label: 'Carry',
+    });
+    expect(shotHeadlineParts({ ...base, totalYards: 260.6 })).toEqual({
+      value: '261',
+      unit: 'yd',
+      label: 'Total',
+    });
+    expect(shotHeadlineParts({ ...base, ballSpeedMph: 148 })).toEqual({
+      value: '148',
+      unit: 'mph',
+      label: 'Ball speed',
+    });
+    expect(shotHeadlineParts(base)).toBeNull();
+  });
+
+  it('splits shot speed for soccer', () => {
+    expect(
+      shotHeadlineParts({ ...base, sport: 'soccer', shotSpeedKmh: 75.2 }),
+    ).toEqual({ value: '75', unit: 'km/h', label: 'Shot speed' });
+    expect(shotHeadlineParts({ ...base, sport: 'soccer' })).toBeNull();
   });
 });
 

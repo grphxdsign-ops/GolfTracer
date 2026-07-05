@@ -37,10 +37,11 @@ import {
   Badge,
   Button,
   Card,
+  Chevron,
   Chip,
   EmptyState,
-  ProgressBar,
   SectionLabel,
+  SegmentedMeter,
   StatTile,
   TrendPill,
   useReducedMotion,
@@ -183,10 +184,11 @@ function FitDetails({ estimate }: { estimate: DistanceEstimateResult }) {
         accessibilityLabel="Toggle fit details"
         accessibilityState={{ expanded }}
         onPress={() => setExpanded((v) => !v)}
+        hitSlop={{ top: spacing.xs, bottom: spacing.xs }}
         style={styles.fitDetailsHeader}
       >
         <Text style={typography.subtitle}>Fit details</Text>
-        <Text style={styles.fitDetailsChevron}>{expanded ? '▾' : '▸'}</Text>
+        <Chevron rotateDeg={expanded ? 90 : 0} color={colors.textMuted} />
       </Pressable>
       {expanded ? (
         <Animated.View
@@ -248,7 +250,7 @@ function ConfidenceMeter({ confidence }: { confidence: number }) {
   const pct = Math.round(confidence * 100);
   return (
     <View style={styles.meter}>
-      <ProgressBar
+      <SegmentedMeter
         progress={confidence}
         accessibilityLabel={`Confidence ${pct} percent`}
       />
@@ -262,6 +264,9 @@ function ConfidenceMeter({ confidence }: { confidence: number }) {
 export function ResultsScreen() {
   const navigation = useNavigation<ResultsNavigation>();
   const insets = useSafeAreaInsets();
+  // Drives the hero card's reactive catchlight (DESIGN.md §5/§7) — never an
+  // autonomous loop, only moves while the user scrolls.
+  const scrollY = useRef(new Animated.Value(0)).current;
   const trackingResult = useSessionStore((s) => s.trackingResult);
   const calibration = useSessionStore((s) => s.calibration);
   const video = useSessionStore((s) => s.video);
@@ -376,6 +381,11 @@ export function ResultsScreen() {
     <ScrollView
       style={sharedStyles.screen}
       contentContainerStyle={{ paddingBottom: spacing.md + insets.bottom }}
+      onScroll={Animated.event(
+        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+        { useNativeDriver: true },
+      )}
+      scrollEventThrottle={16}
     >
       <View style={styles.badgeRow}>
         <Badge
@@ -393,7 +403,7 @@ export function ResultsScreen() {
         {meta.description}
       </Text>
 
-      <Card variant="raised">
+      <Card variant="raised" scrollY={scrollY}>
         <View style={styles.statRow}>
           <HeroCarry carryYards={estimate.carryYards} approx={isFallback} />
           {showDeltas && averages.carryYards !== undefined ? (
@@ -522,10 +532,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  fitDetailsChevron: {
-    ...typography.subtitle,
-    color: colors.textMuted,
   },
   detailRow: {
     flexDirection: 'row',

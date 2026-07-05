@@ -102,7 +102,7 @@ describe('AnalyzeScreen', () => {
       runTrackingMock.mockImplementation(() => new Promise(() => undefined));
       useSessionStore.setState({ frameSource: cannedFrameSource() });
 
-      renderAnalyze();
+      const view = renderAnalyze();
       await waitFor(() =>
         expect(screen.getByText('Reading frames…')).toBeTruthy(),
       );
@@ -117,6 +117,12 @@ describe('AnalyzeScreen', () => {
       });
       expect(screen.getByText('Still working — long clip')).toBeTruthy();
       expect(screen.queryByText('Reading frames…')).toBeNull();
+
+      // Unmount here, still under fake timers: TracerLoader's native-driven
+      // Animated.loop is mid-flight (the pipeline promise never resolves),
+      // and stopping it after switching back to real timers below orphans
+      // its pending frame callback, hanging the next test's cleanup.
+      view.unmount();
     } finally {
       jest.useRealTimers();
     }

@@ -1,7 +1,7 @@
 import { ActivityIndicator, StyleSheet } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
-import { colors } from '../../theme';
+import { alpha, colors } from '../../theme';
 import { Button } from '../Button';
 import * as reducedMotion from '../useReducedMotion';
 
@@ -80,34 +80,35 @@ describe('Button', () => {
     expect(label.fontWeight).toBe('600');
   });
 
-  it('carries the brand glow on the resting primary variant', () => {
+  it('carries a precise 1px edge + top catchlight on the resting primary variant', () => {
     render(<Button label="Go" onPress={jest.fn()} variant="primary" />);
     const style = StyleSheet.flatten(
       screen.getByRole('button', { name: 'Go' }).props.style,
     );
-    expect(style.shadowColor).toBe(colors.primary);
-    expect(style.shadowOpacity).toBe(0.35);
-    expect(style.shadowRadius).toBe(16);
-    expect(style.shadowOffset).toEqual({ width: 0, height: 6 });
-    expect(style.elevation).toBe(8);
+    // No blurred colored shadow (2026 audit: ambient glow reads dated) —
+    // a self-contained hairline edge instead.
+    expect(style.shadowColor).toBeUndefined();
+    expect(style.borderWidth).toBe(StyleSheet.hairlineWidth);
+    expect(style.borderColor).toBe(alpha(colors.primary, 0.22));
+    expect(style.borderTopColor).toBe(colors.glassHighlight);
   });
 
-  it('drops the glow while disabled', () => {
+  it('drops the edge while disabled', () => {
     render(<Button label="Go" onPress={jest.fn()} variant="primary" disabled />);
     const style = StyleSheet.flatten(
       screen.getByRole('button', { name: 'Go' }).props.style,
     );
-    expect(style.shadowColor).toBeUndefined();
+    expect(style.borderColor).toBeUndefined();
   });
 
   it.each(['secondary', 'ghost', 'danger'] as const)(
-    'gives no glow to the %s variant',
+    'gives no primary edge treatment to the %s variant',
     (variant) => {
       render(<Button label="Go" onPress={jest.fn()} variant={variant} />);
       const style = StyleSheet.flatten(
         screen.getByRole('button', { name: 'Go' }).props.style,
       );
-      expect(style.shadowColor).toBeUndefined();
+      expect(style.borderColor === alpha(colors.primary, 0.22)).toBe(false);
     },
   );
 

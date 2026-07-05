@@ -13,7 +13,7 @@ module.exports = {
     '<rootDir>/android/',
   ],
   transformIgnorePatterns: [
-    'node_modules/(?!(react-native|@react-native|@react-navigation|react-native-screens|react-native-safe-area-context|@shopify/react-native-skia|react-native-vision-camera|react-native-worklets-core|react-native-image-picker)/)',
+    'node_modules/(?!(react-native|@react-native|@react-navigation|react-native-screens|react-native-safe-area-context|@shopify/react-native-skia|react-native-vision-camera|react-native-worklets-core|react-native-image-picker|react-native-reanimated)/)',
   ],
   moduleNameMapper: {
     '^@react-native-async-storage/async-storage$':
@@ -28,5 +28,6 @@ module.exports = {
       '<rootDir>/jest/__mocks__/shopify-react-native-skia.tsx',
     '^react-native-image-picker$':
       '<rootDir>/jest/__mocks__/react-native-image-picker.ts',
+    '^react-native-reanimated$': 'react-native-reanimated/mock',
   },
 };

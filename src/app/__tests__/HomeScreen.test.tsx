@@ -182,7 +182,10 @@ describe('HomeScreen', () => {
     // The sports row also says "Golf" — scope the checks to the card.
     const card = screen.getByTestId('home-recent-card');
     expect(within(card).getByText('Golf')).toBeTruthy();
-    expect(within(card).getByText('241 yd carry')).toBeTruthy();
+    // Hero metric now renders via StatTile (value/unit/label split).
+    expect(within(card).getByText('241')).toBeTruthy();
+    expect(within(card).getByText('yd')).toBeTruthy();
+    expect(within(card).getByText('Carry')).toBeTruthy();
     expect(within(card).getByText('High')).toBeTruthy();
     expect(within(card).getByText('Just now')).toBeTruthy();
 

@@ -2,6 +2,7 @@ import { StyleSheet } from 'react-native';
 import { render, screen } from '@testing-library/react-native';
 
 import { alpha, colors } from '../../theme';
+import { Chevron } from '../Chevron';
 import { TrendPill } from '../TrendPill';
 
 function pillStyle(testID: string): Record<string, unknown> {
@@ -10,14 +11,17 @@ function pillStyle(testID: string): Record<string, unknown> {
   );
 }
 
+/** The diagonal vector chevron standing in for the old ↑/↓/→ glyphs. */
+function arrowRotateDeg(): number {
+  return screen.UNSAFE_getByType(Chevron).props.rotateDeg;
+}
+
 describe('TrendPill', () => {
-  it('renders an up arrow with magnitude and unit', () => {
+  it('renders an up-right chevron with magnitude and unit', () => {
     render(
       <TrendPill delta={12} unit="yd" goodDirection="up" testID="pill" />,
     );
-    expect(
-      screen.getByText('↑', { includeHiddenElements: true }),
-    ).toBeTruthy();
+    expect(arrowRotateDeg()).toBe(-45);
     expect(
       screen.getByText('12', { includeHiddenElements: true }),
     ).toBeTruthy();
@@ -56,9 +60,7 @@ describe('TrendPill', () => {
     render(
       <TrendPill delta={-3} unit="s" goodDirection="down" testID="pill" />,
     );
-    expect(
-      screen.getByText('↓', { includeHiddenElements: true }),
-    ).toBeTruthy();
+    expect(arrowRotateDeg()).toBe(45);
     expect(pillStyle('pill').backgroundColor).toBe(
       alpha(colors.success, 0.16),
     );
@@ -69,9 +71,7 @@ describe('TrendPill', () => {
     expect(
       screen.getByText('even', { includeHiddenElements: true }),
     ).toBeTruthy();
-    expect(
-      screen.getByText('→', { includeHiddenElements: true }),
-    ).toBeTruthy();
+    expect(arrowRotateDeg()).toBe(0);
     expect(pillStyle('pill').backgroundColor).toBe(colors.overlay);
   });
 
@@ -89,9 +89,7 @@ describe('TrendPill', () => {
     render(
       <TrendPill delta={2} base={200} goodDirection="up" testID="pill" />,
     );
-    expect(
-      screen.getByText('↑', { includeHiddenElements: true }),
-    ).toBeTruthy();
+    expect(arrowRotateDeg()).toBe(-45);
   });
 
   it('applies a custom format to the unsigned magnitude', () => {

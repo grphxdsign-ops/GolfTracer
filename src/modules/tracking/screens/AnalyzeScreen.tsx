@@ -31,8 +31,8 @@ import {
   Button,
   Card,
   EmptyState,
-  ProgressBar,
   ScreenHeader,
+  SegmentedMeter,
   TracerLoader,
 } from '../../../app/components';
 import { runTracking, type RunTrackingOptions } from '../tracker/pipeline';
@@ -273,7 +273,7 @@ export function AnalyzeScreen() {
         <Text style={[typography.heading, styles.runningTitle]}>
           Tracking ball flight
         </Text>
-        <ProgressBar
+        <SegmentedMeter
           progress={progress}
           accessibilityLabel="Analysis progress"
           style={styles.runningBar}

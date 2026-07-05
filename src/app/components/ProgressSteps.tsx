@@ -8,7 +8,7 @@
  */
 import { StyleSheet, Text, View } from 'react-native';
 
-import { alpha, colors, spacing, typography } from '../theme';
+import { alpha, colors, radii, spacing, typography } from '../theme';
 
 export type ProgressStepState = 'done' | 'active' | 'todo';
 
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   ring: {
     width: 16,
     height: 16,
-    borderRadius: 8,
+    borderRadius: radii.sm,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
@@ -135,10 +135,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   detail: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '500',
-    color: colors.textMuted,
+    ...typography.caption,
     marginTop: 2,
   },
 });

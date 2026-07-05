@@ -4,9 +4,13 @@
  * day headers, plus a two-tap "Clear history" ghost action — no modal for a
  * simple action (DESIGN.md §8): the first tap arms the button ("Tap again to
  * clear"), the second clears; the armed state disarms itself after a moment.
+ *
+ * Mount entrance (fade + translateY(6→0)) reads as the continuation of
+ * Home's recent-session card handoff (useCardHandoff) rather than a hard
+ * cut — reduce-motion aware.
  */
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,8 +23,9 @@ import {
   Card,
   EmptyState,
   SectionLabel,
+  useReducedMotion,
 } from '../../app/components';
-import { colors, sharedStyles, spacing, typography } from '../../app/theme';
+import { colors, motion, sharedStyles, spacing, typography } from '../../app/theme';
 import {
   dayLabel,
   formatClockTime,
@@ -62,6 +67,8 @@ export function SessionsScreen() {
   const shots = useHistoryStore((s) => s.shots);
   const clear = useHistoryStore((s) => s.clear);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!confirmingClear) {
@@ -73,6 +80,19 @@ export function SessionsScreen() {
     );
     return () => clearTimeout(timer);
   }, [confirmingClear]);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      entrance.setValue(1);
+      return;
+    }
+    Animated.timing(entrance, {
+      toValue: 1,
+      duration: motion.duration.base,
+      easing: motion.easing.enter,
+      useNativeDriver: true,
+    }).start();
+  }, [reducedMotion, entrance]);
 
   if (shots.length === 0) {
     return (
@@ -97,8 +117,21 @@ export function SessionsScreen() {
   };
 
   return (
-    <ScrollView
-      style={sharedStyles.screen}
+    <Animated.ScrollView
+      style={[
+        sharedStyles.screen,
+        {
+          opacity: entrance,
+          transform: [
+            {
+              translateY: entrance.interpolate({
+                inputRange: [0, 1],
+                outputRange: [6, 0],
+              }),
+            },
+          ],
+        },
+      ]}
       contentContainerStyle={{ paddingBottom: insets.bottom + spacing.md }}
     >
       {groupByDay(shots).map((group, groupIndex) => (
@@ -147,7 +180,7 @@ export function SessionsScreen() {
         onPress={handleClearPress}
         style={styles.clearButton}
       />
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
