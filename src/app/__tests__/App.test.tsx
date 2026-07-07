@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react-native';
 import { App } from '../App';
 import { modules } from '../registry';
 import { useProfileStore } from '../../state/profileStore';
+import { useHistoryStore } from '../../state/historyStore';
 
 // App mounts a SafeAreaProvider; the package's jest mock provides inert
 // metrics so rendering never waits on native inset measurement.
@@ -15,6 +16,7 @@ jest.mock('react-native-safe-area-context', () =>
 describe('App shell', () => {
   beforeEach(() => {
     useProfileStore.getState().reset();
+    useHistoryStore.getState().clear();
   });
 
   it('opens on Welcome when onboarding has not been completed', async () => {
@@ -23,25 +25,28 @@ describe('App shell', () => {
       expect(screen.getByText('Trace every shot.')).toBeTruthy(),
     );
     expect(screen.getByText('Get started')).toBeTruthy();
+    // No tab bar during onboarding.
+    expect(screen.queryByTestId('tab-record')).toBeNull();
   });
 
-  it('opens on Home (titled Tracr) when the store says onboarding is complete', async () => {
+  it('opens on the tab shell when the store says onboarding is complete', async () => {
     useProfileStore.setState({ onboardingComplete: true });
     render(<App />);
-    await waitFor(() => expect(screen.getByText('Record')).toBeTruthy());
-    expect(screen.getByText('Import')).toBeTruthy();
+    // The glass tab bar is the shell's signature: four tabs + center Record.
+    await waitFor(() => expect(screen.getByTestId('tab-record')).toBeTruthy());
+    expect(screen.getByTestId('tab-Home')).toBeTruthy();
+    expect(screen.getByTestId('tab-Sessions')).toBeTruthy();
+    expect(screen.getByTestId('tab-Insights')).toBeTruthy();
+    expect(screen.getByTestId('tab-Profile')).toBeTruthy();
+    // Home renders its greeting title.
+    expect(
+      screen.getByText(/^(Morning|Afternoon|Evening)\.$/),
+    ).toBeTruthy();
     // Welcome never flashes for onboarded users.
     expect(screen.queryByText('Trace every shot.')).toBeNull();
-    // The native-stack header renders its title as a config prop, not a
-    // Text node — assert the brand title on the header config directly.
-    // Home's in-content ScreenHeader also carries title="Tracr" (DESIGN.md
-    // §11), so at least one — and possibly two — nodes match.
-    expect(
-      screen.UNSAFE_getAllByProps({ title: 'Tracr' }).length,
-    ).toBeGreaterThanOrEqual(1);
   });
 
-  it('registers all fixed, sport, and onboarding routes exactly once', () => {
+  it('registers all flow, sport, and onboarding routes exactly once', () => {
     const routes = modules.flatMap((m) => m.screens.map((s) => s.route));
     expect([...routes].sort()).toEqual(
       [
@@ -55,7 +60,7 @@ describe('App shell', () => {
         'Record',
         'Results',
         'Review',
-        'Sessions',
+        'ShotDetail',
         'SignIn',
         'SoccerAnalyze',
         'SoccerResults',

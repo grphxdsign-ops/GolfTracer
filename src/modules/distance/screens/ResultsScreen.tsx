@@ -25,6 +25,8 @@ import {
   useHistoryStore,
 } from '../../../state/historyStore';
 import { useBallPointStore } from '../../tracking/screens/ballPointStore';
+import { navigateTab, resetToTab } from '../../../app/navigation/navTabs';
+import { normalizeTrace } from '../../sessions/tracePreview';
 import {
   colors,
   motion,
@@ -336,6 +338,14 @@ export function ResultsScreen() {
       ballSpeedMph: estimate.ballSpeedMph,
       launchAngleDeg: estimate.launchAngleDeg,
       confidence: estimate.confidence,
+      // Persist the redrawable trace — history keeps the tracer (§11).
+      tracePoints: trackingResult
+        ? normalizeTrace(
+            trackingResult.track.smoothedPath,
+            trackingResult.track.frameWidth,
+            trackingResult.track.frameHeight,
+          )
+        : undefined,
     });
     setRecordedShotId(useHistoryStore.getState().shots[0]?.id ?? null);
   }, [estimate, setDistance, addShot, club, trackingResult]);
@@ -350,7 +360,9 @@ export function ResultsScreen() {
   const handleNewShot = () => {
     reset();
     resetDraft();
-    navigation.navigate('Home');
+    // Replace the finished flow with the tab shell — back never re-enters
+    // a dead capture flow.
+    resetToTab(navigation, 'Home');
   };
 
   if (!estimate) {
@@ -364,7 +376,7 @@ export function ResultsScreen() {
               : 'Complete calibration first.'
           }
           actionLabel="Home"
-          onAction={() => navigation.navigate('Home')}
+          onAction={() => navigateTab(navigation, 'Home')}
         />
       </View>
     );
@@ -481,7 +493,7 @@ export function ResultsScreen() {
         label="Home"
         variant="ghost"
         size="md"
-        onPress={() => navigation.navigate('Home')}
+        onPress={() => navigateTab(navigation, 'Home')}
         style={styles.homeAction}
       />
     </Animated.ScrollView>

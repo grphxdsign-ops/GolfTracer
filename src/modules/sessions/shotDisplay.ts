@@ -6,6 +6,7 @@
  */
 import type { BadgeProps } from '../../app/components';
 import type { ShotRecord } from '../../state/historyStore';
+import type { EstimationMethod } from '../../types/distance';
 import type { TrackQuality } from '../../types/tracking';
 import { SPORT_CATALOG, type SportId } from '../sports/sportCatalog';
 
@@ -96,6 +97,124 @@ const QUALITY_META: Record<
 
 export function qualityLabel(quality: TrackQuality): string {
   return QUALITY_META[quality].label;
+}
+
+const METHOD_LABEL: Record<EstimationMethod, string> = {
+  homography: 'Measured',
+  'physics-fit': 'Physics fit',
+  'club-prior': 'Club average',
+};
+
+/** Short method name for session rows/detail ("Measured", "Physics fit"). */
+export function methodLabel(method: EstimationMethod): string {
+  return METHOD_LABEL[method];
+}
+
+/**
+ * Session-row title: the club for golf ("Driver"), the sport otherwise.
+ * Numbered clubs keep golf's hyphen convention ("7-iron", "3-wood");
+ * worded clubs read as words ("Pitching wedge").
+ */
+export function shotTitle(shot: ShotRecord): string {
+  if (shot.sport === 'golf' && shot.club) {
+    if (/^\d/.test(shot.club)) {
+      return shot.club;
+    }
+    const club = shot.club.replace(/-/g, ' ');
+    return club.charAt(0).toUpperCase() + club.slice(1);
+  }
+  if (shot.sport === 'soccer') {
+    return 'Soccer shot';
+  }
+  return sportName(shot.sport);
+}
+
+/**
+ * Single-pass PB id set for list rendering — Sessions rows must not run the
+ * O(N) isPersonalBest scan per row (O(N²) across a 500-shot history).
+ * Semantics match isPersonalBest exactly, ties included.
+ */
+export function personalBestIds(shots: readonly ShotRecord[]): Set<string> {
+  const bestGolfCarry = new Map<string, number>();
+  let bestSoccerKmh = -Infinity;
+  for (const s of shots) {
+    if (
+      s.sport === 'golf' &&
+      s.club !== undefined &&
+      s.carryYards !== undefined &&
+      s.method !== 'club-prior'
+    ) {
+      const prev = bestGolfCarry.get(s.club) ?? -Infinity;
+      if (s.carryYards > prev) {
+        bestGolfCarry.set(s.club, s.carryYards);
+      }
+    } else if (s.sport === 'soccer' && s.shotSpeedKmh !== undefined) {
+      bestSoccerKmh = Math.max(bestSoccerKmh, s.shotSpeedKmh);
+    }
+  }
+  const ids = new Set<string>();
+  for (const s of shots) {
+    if (
+      s.sport === 'golf' &&
+      s.club !== undefined &&
+      s.carryYards !== undefined &&
+      s.method !== 'club-prior' &&
+      s.carryYards === bestGolfCarry.get(s.club)
+    ) {
+      ids.add(s.id);
+    } else if (
+      s.sport === 'soccer' &&
+      s.shotSpeedKmh !== undefined &&
+      s.shotSpeedKmh === bestSoccerKmh
+    ) {
+      ids.add(s.id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * True when this shot is the standing record for its own comparison group —
+ * golf: highest measured carry for its club (club-prior guesses can neither
+ * hold nor claim a record); soccer: fastest recorded shot. PB marks attach
+ * to the record-setting shot itself, Strava-trophy style
+ * (docs/RESEARCH-APPS.md).
+ */
+export function isPersonalBest(
+  shots: readonly ShotRecord[],
+  shot: ShotRecord,
+): boolean {
+  if (shot.sport === 'golf') {
+    if (
+      shot.carryYards === undefined ||
+      shot.club === undefined ||
+      shot.method === 'club-prior'
+    ) {
+      return false;
+    }
+    return shots.every(
+      (s) =>
+        s.id === shot.id ||
+        s.sport !== 'golf' ||
+        s.club !== shot.club ||
+        s.method === 'club-prior' ||
+        s.carryYards === undefined ||
+        s.carryYards <= shot.carryYards!,
+    );
+  }
+  if (shot.sport === 'soccer') {
+    if (shot.shotSpeedKmh === undefined) {
+      return false;
+    }
+    return shots.every(
+      (s) =>
+        s.id === shot.id ||
+        s.sport !== 'soccer' ||
+        s.shotSpeedKmh === undefined ||
+        s.shotSpeedKmh <= shot.shotSpeedKmh!,
+    );
+  }
+  return false;
 }
 
 export function qualityTone(

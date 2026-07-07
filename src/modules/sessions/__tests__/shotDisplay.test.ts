@@ -6,10 +6,14 @@ import type { ShotRecord } from '../../../state/historyStore';
 import {
   dayLabel,
   formatRelativeWhen,
+  isPersonalBest,
+  methodLabel,
+  personalBestIds,
   qualityLabel,
   qualityTone,
   shotHeadline,
   shotHeadlineParts,
+  shotTitle,
   sportName,
 } from '../shotDisplay';
 
@@ -101,5 +105,87 @@ describe('quality and sport labels', () => {
   it('resolves catalog names', () => {
     expect(sportName('golf')).toBe('Golf');
     expect(sportName('perfected')).toBe('Perfected action');
+  });
+
+  it('maps estimation methods to short labels', () => {
+    expect(methodLabel('homography')).toBe('Measured');
+    expect(methodLabel('physics-fit')).toBe('Physics fit');
+    expect(methodLabel('club-prior')).toBe('Club average');
+  });
+});
+
+describe('shotTitle', () => {
+  const base: ShotRecord = { id: 'x', at: 0, sport: 'golf', quality: 'high' };
+
+  it('titles golf rows by club, soccer rows by sport', () => {
+    expect(shotTitle({ ...base, club: 'driver' })).toBe('Driver');
+    expect(shotTitle({ ...base, club: 'pitching-wedge' })).toBe(
+      'Pitching wedge',
+    );
+    // Numbered clubs keep golf's hyphen convention.
+    expect(shotTitle({ ...base, club: '7-iron' })).toBe('7-iron');
+    expect(shotTitle({ ...base, sport: 'soccer' })).toBe('Soccer shot');
+    expect(shotTitle(base)).toBe('Golf');
+  });
+});
+
+describe('isPersonalBest', () => {
+  const golf = (
+    id: string,
+    carryYards: number,
+    method: ShotRecord['method'] = 'homography',
+  ): ShotRecord => ({
+    id,
+    at: 0,
+    sport: 'golf',
+    quality: 'high',
+    club: 'driver',
+    method,
+    carryYards,
+  });
+
+  it('marks the longest measured carry for the club', () => {
+    const shots = [golf('a', 240), golf('b', 247), golf('c', 231)];
+    expect(isPersonalBest(shots, shots[1]!)).toBe(true);
+    expect(isPersonalBest(shots, shots[0]!)).toBe(false);
+  });
+
+  it('never lets a club-prior guess hold or claim the record', () => {
+    const shots = [golf('a', 240), golf('guess', 280, 'club-prior')];
+    expect(isPersonalBest(shots, shots[1]!)).toBe(false);
+    expect(isPersonalBest(shots, shots[0]!)).toBe(true);
+  });
+
+  it('scopes golf records per club', () => {
+    const shots = [
+      golf('a', 240),
+      { ...golf('b', 150), club: '7-iron' as const },
+    ];
+    expect(isPersonalBest(shots, shots[1]!)).toBe(true);
+  });
+
+  it('marks the fastest soccer shot', () => {
+    const shots: ShotRecord[] = [
+      { id: 's1', at: 0, sport: 'soccer', quality: 'high', shotSpeedKmh: 82 },
+      { id: 's2', at: 0, sport: 'soccer', quality: 'high', shotSpeedKmh: 91 },
+    ];
+    expect(isPersonalBest(shots, shots[1]!)).toBe(true);
+    expect(isPersonalBest(shots, shots[0]!)).toBe(false);
+  });
+
+  it('personalBestIds matches isPersonalBest across a mixed history', () => {
+    const shots: ShotRecord[] = [
+      golf('a', 240),
+      golf('b', 247),
+      { ...golf('c', 150), club: '7-iron' as const },
+      golf('guess', 300, 'club-prior'),
+      { id: 's1', at: 0, sport: 'soccer', quality: 'high', shotSpeedKmh: 82 },
+      { id: 's2', at: 0, sport: 'soccer', quality: 'high', shotSpeedKmh: 91 },
+    ];
+    const ids = personalBestIds(shots);
+    for (const shot of shots) {
+      expect(ids.has(shot.id)).toBe(isPersonalBest(shots, shot));
+    }
+    expect([...ids].sort()).toEqual(['b', 'c', 's2']);
   });
 });

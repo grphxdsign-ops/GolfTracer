@@ -25,8 +25,8 @@ const performRequestMock = appleAuth.performRequest as unknown as jest.Mock;
 const requestCameraPermissionMock =
   Camera.requestCameraPermission as unknown as jest.Mock;
 
-function HomeStub() {
-  return <Text>HomeRouteStub</Text>;
+function TabsStub() {
+  return <Text>TabsRouteStub</Text>;
 }
 
 function renderFlow(initialRouteName = 'Welcome') {
@@ -34,7 +34,7 @@ function renderFlow(initialRouteName = 'Welcome') {
   return render(
     <NavigationContainer>
       <Stack.Navigator initialRouteName={initialRouteName}>
-        <Stack.Screen name="Home" component={HomeStub} />
+        <Stack.Screen name="Tabs" component={TabsStub} />
         {onboardingModule.screens.map((s) => (
           <Stack.Screen
             key={s.route}
@@ -186,15 +186,15 @@ describe('onboarding flow', () => {
     );
 
     fireEvent.press(screen.getByText('Finish'));
-    await waitFor(() => expect(screen.getByText('HomeRouteStub')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('TabsRouteStub')).toBeTruthy());
     expect(useProfileStore.getState().onboardingComplete).toBe(true);
   });
 
-  it('finish completes onboarding and resets the stack to Home', async () => {
+  it('finish completes onboarding and resets the stack to the tab shell', async () => {
     renderFlow('OnboardingPermissions');
     expect(useProfileStore.getState().onboardingComplete).toBe(false);
     fireEvent.press(screen.getByText('Finish'));
-    await waitFor(() => expect(screen.getByText('HomeRouteStub')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('TabsRouteStub')).toBeTruthy());
     expect(useProfileStore.getState().onboardingComplete).toBe(true);
     // The photo library card never fires a fake OS prompt.
     expect(requestCameraPermissionMock).not.toHaveBeenCalled();

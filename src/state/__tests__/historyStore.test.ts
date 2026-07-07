@@ -34,6 +34,30 @@ describe('historyStore', () => {
   it('exposes the minimum-history gate for deltas', () => {
     expect(MIN_SHOTS_FOR_DELTA).toBeGreaterThanOrEqual(2);
   });
+
+  it('removes a single shot by id and no-ops on unknown ids', () => {
+    useHistoryStore.getState().addShot(golfShot({ at: 1000 }));
+    useHistoryStore.getState().addShot(golfShot({ at: 2000 }));
+    const [first] = useHistoryStore.getState().shots;
+    useHistoryStore.getState().removeShot(first!.id);
+    expect(useHistoryStore.getState().shots).toHaveLength(1);
+    expect(useHistoryStore.getState().shots[0]!.id).not.toBe(first!.id);
+    useHistoryStore.getState().removeShot('nope');
+    expect(useHistoryStore.getState().shots).toHaveLength(1);
+  });
+
+  it('persists tracePoints on the record when provided', () => {
+    useHistoryStore.getState().addShot(
+      golfShot({
+        tracePoints: [
+          { x: 0.1, y: 0.9 },
+          { x: 0.5, y: 0.3 },
+          { x: 0.9, y: 0.4 },
+        ],
+      }),
+    );
+    expect(useHistoryStore.getState().shots[0]!.tracePoints).toHaveLength(3);
+  });
 });
 
 describe('clubAverages', () => {

@@ -1,27 +1,38 @@
 /**
- * App shell — registers the Home screen plus every screen contributed by
- * the module registry, gated by onboarding (DESIGN.md §10): first launch
- * opens Welcome; once profileStore.completeOnboarding() has run, the app
- * opens straight on Home. The navigator waits for the persisted profile to
- * hydrate so onboarded users never flash the Welcome screen.
+ * App shell — the tab-era navigator (docs/RESEARCH-APPS.md §3): a root
+ * native stack whose first screen is the four-tab shell (Home · Sessions ·
+ * Insights · Profile behind GlassTabBar's center Record action), with every
+ * capture/analysis flow and the onboarding screens pushed full-screen over
+ * it. Onboarding gates the initial route (DESIGN.md §10); the navigator
+ * waits for the persisted profile to hydrate so onboarded users never
+ * flash Welcome.
  */
 import { useEffect, useState } from 'react';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar, StyleSheet, View } from 'react-native';
 import {
   SafeAreaProvider,
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
 
-import type { RootStackParamList } from '../types/navigation';
+import type {
+  RootStackParamList,
+  TabParamList,
+} from '../types/navigation';
 import { useProfileStore } from '../state/profileStore';
 import { modules } from './registry';
 import { HomeScreen } from './screens/HomeScreen';
+import { SessionsScreen } from '../modules/sessions/SessionsScreen';
+import { InsightsScreen } from '../modules/insights/InsightsScreen';
+import { ProfileScreen } from '../modules/profile/ProfileScreen';
+import { GlassTabBar } from './navigation/GlassTabBar';
 import { TracerLoader } from './components';
 import { colors, navigationTheme } from './theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tab = createBottomTabNavigator<TabParamList>();
 
 const appTheme = {
   ...DefaultTheme,
@@ -34,6 +45,21 @@ const appTheme = {
     border: colors.border,
   },
 };
+
+/** The persistent shell: in-content headers only (no native header bar). */
+function Tabs(): React.JSX.Element {
+  return (
+    <Tab.Navigator
+      tabBar={(props) => <GlassTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Sessions" component={SessionsScreen} />
+      <Tab.Screen name="Insights" component={InsightsScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
 
 /**
  * True once the persisted profile store has rehydrated from AsyncStorage.
@@ -77,15 +103,15 @@ export function App() {
           <Stack.Navigator
             initialRouteName={
               (onboardingComplete
-                ? 'Home'
+                ? 'Tabs'
                 : 'Welcome') as keyof RootStackParamList
             }
             screenOptions={navigationTheme}
           >
             <Stack.Screen
-              name="Home"
-              component={HomeScreen}
-              options={{ title: 'Tracr' }}
+              name="Tabs"
+              component={Tabs}
+              options={{ headerShown: false }}
             />
             {modules.flatMap((mod) =>
               mod.screens.map((screen) => (

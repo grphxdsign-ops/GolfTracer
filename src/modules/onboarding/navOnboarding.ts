@@ -32,12 +32,13 @@ export function navigateOnboarding(
 }
 
 /**
- * Replace the whole onboarding stack with Home — the flow never stays on
- * the back stack once completed (DESIGN.md §10: first launch only).
+ * Replace the whole onboarding stack with the tab shell — the flow never
+ * stays on the back stack once completed (DESIGN.md §10: first launch
+ * only). Lands on the Home tab (the Tabs navigator's initial route).
  */
 export function resetToHome(navigation: object): void {
   (navigation as OnboardingNavigator).reset({
     index: 0,
-    routes: [{ name: 'Home' }],
+    routes: [{ name: 'Tabs' }],
   });
 }

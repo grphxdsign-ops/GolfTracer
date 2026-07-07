@@ -34,6 +34,7 @@ import {
   type SoccerTakeResult,
 } from '../../sports/sportsSessionStore';
 import { navigateSport } from '../../sports/navSport';
+import { navigateTab } from '../../../app/navigation/navTabs';
 import {
   type JointAngleTable,
   type SideJointAngles,
@@ -344,7 +345,7 @@ export function SoccerResultsScreen() {
       <Button
         label="Home"
         variant="ghost"
-        onPress={() => navigation.navigate('Home')}
+        onPress={() => navigateTab(navigation, 'Home')}
       />
     </ScrollView>
   );

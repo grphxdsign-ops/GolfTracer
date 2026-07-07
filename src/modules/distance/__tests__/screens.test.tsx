@@ -25,11 +25,12 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 
 const mockNavigate = jest.fn();
+const mockReset = jest.fn();
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
   return {
     ...actual,
-    useNavigation: () => ({ navigate: mockNavigate }),
+    useNavigation: () => ({ navigate: mockNavigate, reset: mockReset }),
   };
 });
 
@@ -309,7 +310,7 @@ describe('ResultsScreen', () => {
     expect(screen.queryByLabelText('Toggle fit details')).toBeNull();
   });
 
-  it('resets the session on New shot and navigates Home', () => {
+  it('resets the session on New shot and replaces the stack with Home', () => {
     useSessionStore.getState().setTrackingResult(makeTrackingResult(SPARSE_TRACK));
     useSessionStore.getState().setCalibration({
       club: 'pitching-wedge',
@@ -319,6 +320,9 @@ describe('ResultsScreen', () => {
     renderWithNav(<ResultsScreen />);
     fireEvent.press(screen.getByText('New shot'));
     expect(useSessionStore.getState().trackingResult).toBeNull();
-    expect(mockNavigate).toHaveBeenCalledWith('Home');
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: 'Tabs', params: { screen: 'Home' } }],
+    });
   });
 });

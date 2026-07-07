@@ -1,11 +1,13 @@
 /**
- * Home hub tests (DESIGN.md §11): greeting, conditional pipeline card,
- * sports shortcut row, and the recent session card.
+ * Home tab tests (DESIGN.md §11): greeting header, latest-session hero →
+ * ShotDetail, promoted insight → Insights tab, conditional pipeline card,
+ * sports shortcut row, tools, and the no-history empty state (the only
+ * place Home shows a Record button — the tab bar owns capture otherwise).
  */
 import { NavigationContainer } from '@react-navigation/native';
 import { fireEvent, render, screen, within } from '@testing-library/react-native';
 
-import { HomeScreen } from '../screens/HomeScreen';
+import { HomeScreen, homeGreeting, weekLine } from '../screens/HomeScreen';
 import { useSessionStore } from '../../state/sessionStore';
 import { useProfileStore } from '../../state/profileStore';
 import { useHistoryStore } from '../../state/historyStore';
@@ -67,12 +69,37 @@ const loadVideo = () => {
   useSessionStore.getState().setVideo(asset, makeFrameSource(asset));
 };
 
+const addGolfShot = (carryYards: number, at = Date.now()) =>
+  useHistoryStore.getState().addShot({
+    sport: 'golf',
+    quality: 'high',
+    club: 'driver',
+    method: 'physics-fit',
+    carryYards,
+    totalYards: carryYards + 20,
+    at,
+  });
+
 const renderHome = () =>
   render(
     <NavigationContainer>
       <HomeScreen />
     </NavigationContainer>,
   );
+
+describe('homeGreeting / weekLine', () => {
+  it('greets by daypart and first name', () => {
+    expect(homeGreeting(8, 'Sam')).toBe('Morning, Sam.');
+    expect(homeGreeting(14, 'Sam')).toBe('Afternoon, Sam.');
+    expect(homeGreeting(21, null)).toBe('Evening.');
+  });
+
+  it('counts the trailing week honestly', () => {
+    expect(weekLine(0)).toBe('Ready to trace your next shot.');
+    expect(weekLine(1)).toBe('1 session this week.');
+    expect(weekLine(3)).toBe('3 sessions this week.');
+  });
+});
 
 describe('HomeScreen', () => {
   beforeEach(() => {
@@ -82,9 +109,9 @@ describe('HomeScreen', () => {
     useHistoryStore.getState().clear();
   });
 
-  it('shows the Tracr title with the standard subtitle when no name is known', () => {
+  it('shows the daypart greeting with the standing subtitle when empty', () => {
     renderHome();
-    expect(screen.getByText('Tracr')).toBeTruthy();
+    expect(screen.getByText(/^(Morning|Afternoon|Evening)\.$/)).toBeTruthy();
     expect(screen.getByText('Ready to trace your next shot.')).toBeTruthy();
   });
 
@@ -96,15 +123,59 @@ describe('HomeScreen', () => {
       email: null,
     });
     renderHome();
-    expect(screen.getByText('Trace every shot, Sam.')).toBeTruthy();
+    expect(
+      screen.getByText(/^(Morning|Afternoon|Evening), Sam\.$/),
+    ).toBeTruthy();
   });
 
-  it('keeps Record as the primary CTA with Import as secondary', () => {
+  it('offers Record + Import heroes ONLY in the no-history empty state', () => {
     renderHome();
     fireEvent.press(screen.getByRole('button', { name: 'Record' }));
     expect(mockNavigate).toHaveBeenCalledWith('Record');
-    fireEvent.press(screen.getByRole('button', { name: 'Import' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Import a clip' }));
     expect(mockNavigate).toHaveBeenCalledWith('Import');
+  });
+
+  it('replaces the Record hero with the latest-session card once history exists', () => {
+    addGolfShot(241.4);
+    renderHome();
+    // The tab bar owns capture now — no Record button on Home.
+    expect(screen.queryByRole('button', { name: 'Record' })).toBeNull();
+    const card = screen.getByTestId('home-recent-card');
+    expect(within(card).getByText('Golf · Driver')).toBeTruthy();
+    expect(within(card).getByText('241')).toBeTruthy();
+    expect(within(card).getByText('High')).toBeTruthy();
+    // Import stays reachable under Tools.
+    expect(screen.getByTestId('home-tool-import')).toBeTruthy();
+  });
+
+  it('opens the latest shot detail from the hero card', () => {
+    addGolfShot(241.4);
+    renderHome();
+    const id = useHistoryStore.getState().shots[0]!.id;
+    fireEvent.press(screen.getByTestId('home-recent-card'));
+    expect(mockNavigate).toHaveBeenCalledWith('ShotDetail', { shotId: id });
+  });
+
+  it('shows the honest delta only once enough prior history exists', () => {
+    // Two prior shots — below MIN_SHOTS_FOR_DELTA, no trend pill.
+    addGolfShot(230, Date.now() - 3000);
+    addGolfShot(235, Date.now() - 2000);
+    addGolfShot(247);
+    renderHome();
+    expect(screen.queryByTestId('home-hero-trend')).toBeNull();
+  });
+
+  it('promotes one insight card when a club trends up, opening Insights', () => {
+    // Six driver shots, newer half clearly longer → promoted insight.
+    [230, 231, 229, 240, 242, 244].forEach((carry, i) =>
+      addGolfShot(carry, Date.now() - (6 - i) * 1000),
+    );
+    renderHome();
+    const card = screen.getByTestId('home-insight-card');
+    expect(within(card).getByText(/Driver carry up \d+ yd/)).toBeTruthy();
+    fireEvent.press(card);
+    expect(mockNavigate).toHaveBeenCalledWith('Tabs', { screen: 'Insights' });
   });
 
   it('omits the pipeline card entirely while no session is in flight', () => {
@@ -157,40 +228,5 @@ describe('HomeScreen', () => {
     expect(tool).toBeTruthy();
     fireEvent.press(tool);
     expect(mockNavigate).toHaveBeenCalledWith('PerfectedAction');
-  });
-
-  it('shows the no-sessions line when history is empty', () => {
-    renderHome();
-    expect(
-      screen.getByText('No sessions yet — record your first shot.'),
-    ).toBeTruthy();
-    expect(screen.queryByTestId('home-recent-card')).toBeNull();
-  });
-
-  it('shows the latest shot as one card and opens Sessions on tap', () => {
-    useHistoryStore.getState().addShot({
-      sport: 'golf',
-      quality: 'high',
-      club: 'driver',
-      method: 'physics-fit',
-      carryYards: 241.4,
-      totalYards: 262,
-      at: Date.now(),
-    });
-    renderHome();
-
-    // The sports row also says "Golf" — scope the checks to the card.
-    const card = screen.getByTestId('home-recent-card');
-    expect(within(card).getByText('Golf')).toBeTruthy();
-    // Hero metric now renders via StatTile (value/unit/label split).
-    expect(within(card).getByText('241')).toBeTruthy();
-    expect(within(card).getByText('yd')).toBeTruthy();
-    expect(within(card).getByText('Carry')).toBeTruthy();
-    expect(within(card).getByText('High')).toBeTruthy();
-    expect(within(card).getByText('Just now')).toBeTruthy();
-
-    fireEvent.press(card);
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith('Sessions');
   });
 });

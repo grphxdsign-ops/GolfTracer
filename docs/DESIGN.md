@@ -142,7 +142,7 @@ color, so a palette change propagates everywhere.
 1px hairlines only. Never a colored 2–4px border, never a left/right stripe.
 Glass cards may brighten only their **top** edge with `glassHighlight`.
 
-### Tracer ember (video-stage only — never in chrome)
+### Tracer ember (video-stage only — never in chrome*)
 
 | Token | Value |
 |---|---|
@@ -150,6 +150,9 @@ Glass cards may brighten only their **top** edge with `glassHighlight`.
 | `tracer.mid` | `#FF9E2C` |
 | `tracer.tail` | `#FF4D00` |
 | `tracer.glow` | `rgba(255,122,26,0.35)` |
+
+*One carve-out: PB (personal-best) marks — see §11.5. A PB pill marks a
+record flight, the tracer's own voice; it is the only ember-tinted chrome.
 
 ---
 
@@ -214,7 +217,7 @@ Everything else is ≤250ms and out of the way.
 | Token | Value | Use |
 |---|---|---|
 | `motion.duration.press` | 90 | Button press scale in/out |
-| `motion.duration.fast` | 150 | Segmented thumb slide, selection swaps, card→detail handoff (§11.1) |
+| `motion.duration.fast` | 150 | Segmented thumb slide, selection swaps, card→detail handoff (§11.4) |
 | `motion.duration.base` | 200 | Row/element entrance (opacity + translateY 8→0), crossfades |
 | `motion.duration.gentle` | 250 | Sheet/expandable open (exit ≈ 0.75×) |
 | `motion.duration.countUp` | 700 | Hero stat count-up (once, on reveal) |
@@ -258,7 +261,7 @@ Rules:
   scrolls past — Linear's reactive-highlight technique, since static glass
   reads flat. This is interaction-driven, not an autonomous loop, so it
   does not trip the no-looping-pulses rule below. Reserve for one hero card
-  per screen (Home's recent-session card, Results' hero card) — every card
+  per screen (Home's latest-session card, Results' hero card) — every card
   doing this is noise, not a signature.
 - No bounce/overshoot on anything touched repeatedly or continuously
   (record control, nav, segments, scrubber, steppers). Scrubber = zero lag, 1:1.
@@ -329,7 +332,11 @@ built screen-local and reported as gaps.
 | `ProgressBar` | determinate bar, `accessibilityRole="progressbar"`, scaleX-animated fill — reserved for genuinely continuous progress (e.g. byte upload); ticked metrics use `SegmentedMeter` instead |
 | `Skeleton` | layout-shaped loading block, gentle opacity loop, reduce-motion aware |
 | `useReducedMotion` | shared hook wrapping `AccessibilityInfo.isReduceMotionEnabled` |
-| `useCardHandoff` | Reanimated-driven card→detail exit cue for a screen's one primary drill-in tap (§11.1) |
+| `useCardHandoff` | Reanimated-driven card→detail exit cue for a screen's one primary drill-in tap (§11.4) |
+
+Navigation/feature-owned pieces (same design rules, module-local):
+`GlassTabBar` + `TabGlyph` (app/navigation), `TraceGlyph` (sessions —
+mono/ember trace redraws), `Sparkline` (insights — series + baseline).
 
 Full prop contracts live in the kit implementation spec (workflow doc); this
 table is the canonical inventory.
@@ -413,45 +420,110 @@ generic template, 2026 design audit finding):
 Completing onboarding writes `profileStore.completeOnboarding()`; the app
 never shows the flow again (sign-out re-arms it).
 
-## 11. Home — hub architecture (18Birdies/SwingVision register)
+## 11. App shape — tab shell (research-locked, docs/RESEARCH-APPS.md)
 
-Home is a hub, not a dashboard: quick actions first, everything else is a
-drill-in. Order: greeting header (first name if known) → **Record** (the
-one primary CTA) + Upload secondary → "Your sports" shortcut row (chosen
-sports only, small glass tiles routing straight into each flow) →
-**Recent session** (single latest-shot glass card, tap → Sessions) →
-nothing else. Pipeline detail, full history, settings: all behind taps
-(Sessions screen, Settings sheet). Density lock (§4) applies.
+The app is a four-tab shell with a raised center Record action —
+**Home · Sessions · ⬤ Record · Insights · Profile** — on `GlassTabBar`
+(warm-glass alpha fill, top `glassHighlight` hairline, never native blur).
+Every leading capture app (SwingVision/Strava/Arccos/HomeCourt) runs this
+shape; a flat everything-off-one-hub stack exists nowhere in the leading
+set. Rules:
 
-**Recent session card layout:** top row — session title left
-(`sportName`, `subtitle`), relative time right (`caption`, muted,
-tabular). Bottom row (`marginTop: sm`) — the hero metric left as a
-`StatTile` `standard` (value + demoted unit + metric label, e.g. "241 yd
-Carry"), quality badge right. The hero metric gets its own row and a
-proportionally bigger numeral than the surrounding metadata — flat,
-same-weight rows read as a spec sheet, not a performance card (2026 design
-audit finding). This is the screen's one hero `Card` — it carries the
-scroll-driven reactive catchlight (§5).
+- **Record is the bar's one primary**: 56pt filled circle, green halo ring
+  (alpha primary .13), record-ring glyph, deliberately **label-free** — the
+  raised circle is the label. Press = standard press pop (§5).
+- Tab glyphs are Skia line icons in the SportIcon brand style (single
+  stroke weight, round caps). Active tint `accent`; inactive 40% cream;
+  10pt labels.
+- Tab roots render **in-content headers** (greeting/title), never native
+  header bars. Capture/analysis flows push **full-screen over the tabs**
+  (native stack) — during camera work the bar correctly disappears.
+- Cross-navigator jumps go through `navTabs.ts` (`navigateTab`,
+  `resetToTab`) — the nesting shape lives in exactly one file. Finished
+  flows `resetToTab` so back never re-enters a dead flow.
 
-### 11.1 Card→detail continuity (handoff)
+### 11.1 Home — your story, not a menu
 
-Native-stack is frozen (`App.tsx`) — no custom cross-screen transition
-interpolator, so there is no true shared-element morph between a card and
-its detail screen. `useCardHandoff` (Reanimated) approximates continuity
-with a same-screen exit cue: on confirm-press the source card scales to
-0.96× and fades to ~0.86 opacity over `motion.duration.fast`, *then*
-navigation fires — reduce-motion skips straight to navigation. Built on
-Reanimated rather than core `Animated` specifically because the animation
-must visibly complete before triggering navigation, and Reanimated runs it
-on the UI thread, immune to the JS-thread congestion the navigation
-transition itself causes (exactly when a bridge-driven `Animated` callback
-tends to fire late). The destination screen pairs this with its own mount
-entrance (fade + translateY(6→0), reduce-motion aware) so the two halves
-read as one continuous motion rather than a hard cut.
+Order: daypart greeting (`title` role; "Morning, Sam." / subtitle = 7-day
+session count) → **Latest session** hero card → ONE promoted insight →
+"Your sports" shortcuts → Tools (Perfected action, Import). Pipeline card
+only while a session is in flight. Record lives in the tab bar, so Home
+shows a Record hero button ONLY in the no-history empty state.
 
-Scope: one primary card→detail tap per screen (Home's recent-session card
-→ Sessions) — same restraint as the reactive catchlight. Not a blanket
-replacement for `onPress`; most taps stay instant.
+**Latest-session card:** raised tier, the screen's one hero (reactive
+catchlight, §5). Top row — "Golf · Driver" left, quality badge right.
+Metric row — StatTile standard + honest TrendPill (vs the club's prior
+average, MIN_SHOTS_FOR_DELTA-gated). Caption merges metric label, delta
+context, and relative time. Tap → that shot's ShotDetail (handoff, §11.4).
+
+**Promoted insight** (Oura "one big thing", Arccos coaching tone): the
+single computed, data-grounded callout ("7-iron carry up 4 yd / Across
+your last 10 tracked shots") — only when a genuine ≥2 yd gain exists over
+≥6 measured shots; never a reach, never badges/streaks/coins. Tap →
+Insights tab.
+
+### 11.2 Sessions + ShotDetail — the visual library
+
+Every shot persists a redrawable trace (`ShotRecord.tracePoints`,
+normalized ≤24 points) — history keeps the tracer; losing it is
+Toptracer's most-complained gap. Session rows: stage-chip glyph with the
+trace redrawn in **monochrome cream** (`TraceGlyph mono` — a repeated
+ember would be chrome ornament, §2; sport icon fallback for pre-trace
+history), club-name title, time · method meta, PB mark, headline stat
+(soccer wears "~"), chevron → ShotDetail. Sport filter chips appear once
+two sports have shots. Day-group headers; clear-history lives on Profile.
+
+**ShotDetail:** the stored trace redrawn in **ember with glow**
+(`TraceGlyph ember`) on a stage card — the screen's one hot element —
+method badge + PB mark overlaid; carry/total stat cards; borderless
+3-column Flight grid; SegmentedMeter confidence with the method's honest
+description; framed two-tap Delete (danger tint ≥4.5:1).
+
+### 11.3 Insights — honest trends only
+
+Sport switcher (only when both sports have shots). Hero card: the
+most-recorded club's average over the **labeled** window ("Avg driver
+carry · last 20 shots"), TrendPill delta vs the PREVIOUS window,
+`Sparkline` with the previous-window average as a dotted baseline
+(numbers never float without a reference), best-carry caption. "Your
+bag": per-club rows — count caption, 1D carry dot-strip (4px track,
+min/max labels, window dots, **PB tick in ember**) and the trimmed
+average; **no faked 2D dispersion** — monocular data has no lateral axis.
+Clubs under MIN_SHOTS_FOR_DELTA render a `SegmentedMeter` "Calibrating"
+row (n of 3) instead of a fake trend. Soccer mirrors this in km/h with
+"~" everywhere and an on-target rate. Empty state invites recording.
+
+### 11.4 Card→detail continuity (handoff)
+
+No custom cross-screen transition interpolator on the native stack, so
+there is no true shared-element morph between a card and its detail
+screen. `useCardHandoff` (Reanimated) approximates continuity with a
+same-screen exit cue: on confirm-press the source card scales to 0.96×
+and fades to ~0.86 opacity over `motion.duration.fast`, *then* navigation
+fires — reduce-motion skips straight to navigation. Built on Reanimated
+rather than core `Animated` specifically because the animation must
+visibly complete before triggering navigation, and Reanimated runs it on
+the UI thread, immune to the JS-thread congestion the navigation
+transition itself causes. Scope: one primary card→detail tap per screen
+(Home's latest-session card → ShotDetail) — same restraint as the
+reactive catchlight.
+
+### 11.5 Profile — the promise onboarding makes
+
+Account card (monogram avatar in an accent ring, provider line; guest =
+"history stays on this device") → Preferences (SegmentedControl units/
+handedness + analytics Chip — the same controls onboarding used, now
+permanently reachable) → Your sports (SportIcon rows, Active/Off toggles,
+outline "Coming soon" badges) → Data (framed two-tap "Clear shot history
+(n)") → Sign out (ghost; resets the profile and the navigator to Welcome)
+→ version caption.
+
+**PB marks — the one sanctioned ember chrome accent.** A PB pill
+(emberHead text, hairline ember border, faint amber wash) attaches to the
+record-setting shot itself (Strava-trophy pattern) in session rows,
+ShotDetail, and Insights strip ticks. It marks a record *flight* — the
+tracer's own voice — and is the only place ember may touch chrome (§2
+otherwise unchanged). At most one PB treatment per row/card.
 
 ## 12. Per-sport stat canon (research-verified)
 

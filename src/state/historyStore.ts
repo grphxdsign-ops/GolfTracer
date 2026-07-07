@@ -18,12 +18,25 @@ import type { SportId } from '../modules/sports/sportCatalog';
 
 export const MIN_SHOTS_FOR_DELTA = 3;
 
+/**
+ * One point of a persisted trace, normalized to the source frame
+ * (x,y ∈ 0..1, y down). Traces are stored downsampled (≤24 points) so every
+ * shot's tracer stays redrawable in history — Toptracer's most-complained
+ * gap is losing the visual trace after the session (docs/RESEARCH-APPS.md).
+ */
+export interface TracePoint {
+  x: number;
+  y: number;
+}
+
 export interface ShotRecord {
   id: string;
   sport: SportId;
   /** Epoch ms when the shot was recorded into history. */
   at: number;
   quality: TrackQuality;
+  /** Redrawable flight path (normalized, downsampled) when tracking had one. */
+  tracePoints?: TracePoint[];
   // Golf
   club?: ClubType;
   method?: EstimationMethod;
@@ -50,6 +63,8 @@ export interface ClubAverages {
 export interface HistoryState {
   shots: ShotRecord[];
   addShot(shot: Omit<ShotRecord, 'id' | 'at'> & { at?: number }): void;
+  /** Delete a single shot (ShotDetail's delete action). Unknown ids no-op. */
+  removeShot(id: string): void;
   clear(): void;
 }
 
@@ -70,6 +85,8 @@ export const useHistoryStore = create<HistoryState>()(
             ...s.shots,
           ].slice(0, MAX_SHOTS),
         })),
+      removeShot: (id) =>
+        set((s) => ({ shots: s.shots.filter((shot) => shot.id !== id) })),
       clear: () => set({ shots: [] }),
     }),
     {

@@ -1,12 +1,11 @@
 /**
- * Sessions module — shot history drill-in (DESIGN.md §11): Home's recent
- * session card taps through to the full session list.
- *
- * The 'Sessions' route is mounted through App.tsx's existing route cast
- * (like the sport routes; the frozen RootStackParamList is not touched).
+ * Sessions module — the shot library. SessionsScreen itself mounts as a
+ * tab (App.tsx tab shell); this registry contributes the ShotDetail
+ * drill-in pushed over the tabs from session rows and Home's latest-
+ * session card (docs/RESEARCH-APPS.md §3.4).
  */
 import type { ScreenRegistration } from '../../types/modules';
-import { SessionsScreen } from './SessionsScreen';
+import { ShotDetailScreen } from './ShotDetailScreen';
 
 export const sessionsModule: {
   name: string;
@@ -15,9 +14,9 @@ export const sessionsModule: {
   name: 'sessions',
   screens: [
     {
-      route: 'Sessions',
-      component: SessionsScreen,
-      title: 'Sessions',
+      route: 'ShotDetail',
+      component: ShotDetailScreen,
+      title: 'Shot',
     },
   ],
 };

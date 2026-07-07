@@ -35,6 +35,7 @@ import {
   SegmentedMeter,
   TracerLoader,
 } from '../../../app/components';
+import { navigateTab } from '../../../app/navigation/navTabs';
 import { runTracking, type RunTrackingOptions } from '../tracker/pipeline';
 import { useBallPointStore } from './ballPointStore';
 import { mapTapToVideoPoint } from './tapMapping';
@@ -176,7 +177,7 @@ export function AnalyzeScreen() {
           label="Back to home"
           variant="ghost"
           size="md"
-          onPress={() => navigation.navigate('Home')}
+          onPress={() => navigateTab(navigation, 'Home')}
         />
       </View>
     );
