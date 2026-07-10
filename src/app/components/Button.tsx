@@ -1,21 +1,25 @@
 /**
- * Button — docs/DESIGN.md §7 (kit inventory) and §5 (press motion).
+ * Button — docs/DESIGN.md §7 (kit inventory) and §5 (press pop, the
+ * Framer-grade sanctioned exception).
  *
  * Pill CTA with primary / secondary / ghost / danger variants, three sizes,
- * Animated press scale (0.97, reduce-motion aware), and loading/disabled
- * states. The visible label is the accessible name.
+ * a two-beat asymmetric press (timing down, spring back up with one
+ * overshoot), a brand glow on the primary fill that flattens while pressed,
+ * and loading/disabled states. The visible label is the accessible name.
+ * Reduce-motion: no scale, color swap only.
  */
 import { useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Easing,
   Pressable,
   StyleSheet,
   Text,
 } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
-import { colors, motion, radii, spacing } from '../theme';
+import { alpha, colors, motion, radii, spacing } from '../theme';
 import { useReducedMotion } from './useReducedMotion';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -50,12 +54,13 @@ const variantColors: Record<
   },
   ghost: {
     bg: 'transparent',
-    bgPressed: 'rgba(255,255,255,0.06)',
+    // Pressed state gains the tier-1 warm glass fill.
+    bgPressed: colors.surface,
     label: colors.accent,
   },
   danger: {
     bg: colors.danger,
-    bgPressed: '#C93A3F',
+    bgPressed: colors.dangerPressed,
     label: colors.text,
   },
 };
@@ -77,14 +82,29 @@ export function Button({
   const palette = variantColors[variant];
   const inactive = disabled || loading;
 
-  const animateScale = (toValue: number) => {
+  // Press pop (DESIGN.md §5): press-in is a quick ease-out timing — never a
+  // spring on the way down; release is the shared softened spring (ζ≈0.75,
+  // ~3% overshoot — "snappy without being abrupt", not a 2020 Framer-demo
+  // bounce). Reduce-motion skips the scale entirely (color swap only).
+  const pressIn = () => {
     if (reducedMotion) {
       return;
     }
     Animated.timing(scale, {
-      toValue,
+      toValue: 0.97,
       duration: motion.duration.press,
-      easing: motion.easing.standard,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const pressOut = () => {
+    if (reducedMotion) {
+      return;
+    }
+    Animated.spring(scale, {
+      toValue: 1,
+      ...motion.spring.press,
       useNativeDriver: true,
     }).start();
   };
@@ -103,12 +123,17 @@ export function Button({
         // matching Chip's approach; lg/md already meet 44pt visually.
         hitSlop={size === 'sm' ? { top: 4, bottom: 4 } : undefined}
         onPress={onPress}
-        onPressIn={() => animateScale(0.97)}
-        onPressOut={() => animateScale(1)}
+        onPressIn={pressIn}
+        onPressOut={pressOut}
         style={({ pressed }) => [
           styles.base,
           sizeStyles[size],
           variant === 'secondary' && styles.secondaryBorder,
+          // Primary CTA carries a precise 1px edge + top catchlight, never
+          // a blurred colored shadow (2026 audit: ambient glow reads as a
+          // dated template, self-contained edge lighting reads premium —
+          // DESIGN.md §5). Pressed = flatten: edge drops, fill darkens.
+          variant === 'primary' && !pressed && !inactive && styles.primaryEdge,
           { backgroundColor: pressed ? palette.bgPressed : palette.bg },
           inactive && styles.inactive,
         ]}
@@ -152,6 +177,11 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
+  primaryEdge: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: alpha(colors.primary, 0.22),
+    borderTopColor: colors.glassHighlight,
+  },
   inactive: {
     opacity: 0.4,
   },
@@ -164,13 +194,13 @@ const styles = StyleSheet.create({
 });
 
 const sizeStyles = StyleSheet.create({
-  lg: { height: 52, paddingHorizontal: spacing.lg },
+  lg: { height: 52, paddingHorizontal: spacing.lg + 2 },
   md: { height: 44, paddingHorizontal: spacing.md },
   sm: { height: 36, paddingHorizontal: spacing.md },
 });
 
 const labelSizeStyles = StyleSheet.create({
-  lg: { fontSize: 16 },
+  lg: { fontSize: 17 },
   md: { fontSize: 15 },
   sm: { fontSize: 13 },
 });

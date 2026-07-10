@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { RootStackParamList } from '../../../types';
+import { navigateTab, resetToTab } from '../../../app/navigation/navTabs';
 import { colors, motion, sharedStyles, spacing, typography } from '../../../app/theme';
 import {
   Button,
@@ -28,7 +29,7 @@ import { useSportsSessionStore } from '../../sports/sportsSessionStore';
 import { renderPerfectedFrames } from '../render/dummyRenderer';
 import { FakeVideoExporter } from '../export/VideoExporter';
 
-type HomeNavigation = NativeStackNavigationProp<RootStackParamList, 'Home'>;
+type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 /** Entrance offset for the section reveal (translateY, px). */
 const ENTRANCE_OFFSET = 8;
@@ -95,7 +96,7 @@ export function PerfectedResultsScreen() {
           title="No perfected action yet"
           body="Build one from the Perfected Action screen first."
           actionLabel="Home"
-          onAction={() => navigation.navigate('Home')}
+          onAction={() => navigateTab(navigation, 'Home')}
         />
       </View>
     );
@@ -115,7 +116,7 @@ export function PerfectedResultsScreen() {
 
   const handleReset = () => {
     setPerfectedResult(null);
-    navigation.navigate('Home');
+    resetToTab(navigation, 'Home');
   };
 
   // Labels match the soccer JOINT_LABELS casing (en-dash, Title case).

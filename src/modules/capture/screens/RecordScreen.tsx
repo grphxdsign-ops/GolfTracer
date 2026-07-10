@@ -27,7 +27,7 @@ import type { FrameSource, VideoAsset } from '../../../types/media';
 import type { CameraAdapter } from '../../../adapters/camera/CameraAdapter';
 import { VisionCameraAdapter } from '../../../adapters/camera/VisionCameraAdapter';
 import { NativeFrameSource } from '../../../adapters/frames/NativeFrameSource';
-import { colors, motion, radii, spacing, typography } from '../../../app/theme';
+import { alpha, colors, motion, radii, spacing, typography } from '../../../app/theme';
 import {
   Badge,
   Card,
@@ -396,7 +396,9 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 36,
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.9)',
+    // Warm near-white, not a border token: the ring must read at full
+    // strength over the live camera preview on any background.
+    borderColor: alpha('#FFFBF2', 0.9),
     alignItems: 'center',
     justifyContent: 'center',
   },

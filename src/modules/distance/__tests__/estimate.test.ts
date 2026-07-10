@@ -10,6 +10,7 @@ import type { BallTrack, TrackPoint, TrackQuality } from '../../../types';
 
 import { nelderMead } from '../estimate/neldermead';
 import { fitLaunchFromTrack } from '../estimate/launchFit';
+import { CLUB_PRIORS } from '../physics/clubPriors';
 import { estimateDistance } from '../estimate/estimateDistance';
 import { buildCalibration, metersPerPixelAt } from '../calibration/calibrate';
 import {
@@ -248,8 +249,9 @@ describe('fitLaunchFromTrack', () => {
     });
     const fit = fitLaunchFromTrack(track, model, 'driver');
     expect(fit.converged).toBe(false);
-    // Falls back to the club prior means.
-    expect(fit.launch.ballSpeedMph).toBe(150);
+    // Falls back to the club prior means (tracks the data table, not a
+    // literal — the priors are research-calibrated and may be retuned).
+    expect(fit.launch.ballSpeedMph).toBe(CLUB_PRIORS.driver.ballSpeedMph.mean);
   });
 });
 

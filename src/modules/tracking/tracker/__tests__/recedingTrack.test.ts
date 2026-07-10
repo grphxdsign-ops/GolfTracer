@@ -63,6 +63,8 @@ describe('receding 30 fps track (evidence #3 geometry)', () => {
     const flight = makeRecedingFlight(SPEC);
     const { track } = await runTracking(makeFrameSource(flight.frames), {
       ballPoint,
+      // Frozen clock: the fallback pass must run regardless of machine speed.
+      clock: () => 0,
     });
 
     expect(track.quality).not.toBe('failed');
@@ -88,11 +90,13 @@ describe('receding 30 fps track (evidence #3 geometry)', () => {
       ballPoint,
       detectorOptions: { minRadiusPx: 2 },
       tracker,
+      clock: () => 0,
     });
     const rollingRun = await runTracking(makeFrameSource(flight.frames), {
       ballPoint,
       detectorOptions: { backgroundMode: 'rolling', minRadiusPx: 2 },
       tracker,
+      clock: () => 0,
     });
 
     // The rolling median absorbs the near-stationary receding ball late in

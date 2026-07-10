@@ -4,7 +4,16 @@
  * code is ever loaded in Jest.
  */
 
-export const Camera: (props: Record<string, unknown>) => null = () => null;
+// Component + the static permission API the onboarding permissions screen
+// calls (Camera.requestCameraPermission in vision-camera v4). Tests override
+// the jest.fn to drive granted/denied paths.
+export const Camera: ((props: Record<string, unknown>) => null) & {
+  requestCameraPermission: jest.Mock;
+} = Object.assign((_props: Record<string, unknown>): null => null, {
+  requestCameraPermission: jest.fn(
+    async (): Promise<'granted' | 'denied'> => 'granted',
+  ),
+});
 
 export const useCameraDevice = (): undefined => undefined;
 

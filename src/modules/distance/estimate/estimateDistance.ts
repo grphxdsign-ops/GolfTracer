@@ -29,7 +29,7 @@ import type {
   TrackQuality,
 } from '../../../types';
 
-import { priorLaunch } from '../physics/clubPriors';
+import { CLUB_AVG_CARRY_YD, priorLaunch } from '../physics/clubPriors';
 import { simulateFlight, type FlightResult } from '../physics/simulator';
 import { totalFromCarry } from '../physics/rollModel';
 import {
@@ -298,12 +298,19 @@ export function estimateDistance(
     }
   }
 
-  // Rung 3: honest fallback to the club prior.
+  // Rung 3: honest fallback to the club prior. The quoted carry is the
+  // PUBLISHED amateur average (CLUB_AVG_CARRY_YD), not the simulated prior
+  // flight — the flight model under-flies high-spin mid irons, and "a
+  // typical distance for your club" must mean the literature's number, not
+  // the simulator's. Secondary stats (apex, hang time, landing angle) stay
+  // simulator-derived: they only need plausibility, and all wear the
+  // fallback's ~ treatment in the UI.
   const launch = priorLaunch(club);
   const flight = simulateFlight(launch);
+  const avgCarry = CLUB_AVG_CARRY_YD[club];
   return {
-    carryYards: flight.carryYards,
-    totalYards: totalFromCarry(flight.carryYards, flight.landingAngleDeg, club),
+    carryYards: avgCarry,
+    totalYards: totalFromCarry(avgCarry, flight.landingAngleDeg, club),
     apexFeet: flight.apexFeet,
     ballSpeedMph: launch.ballSpeedMph,
     launchAngleDeg: launch.launchAngleDeg,

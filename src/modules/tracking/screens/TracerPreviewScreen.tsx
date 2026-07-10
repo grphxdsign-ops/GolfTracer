@@ -242,10 +242,10 @@ export function TracerPreviewScreen() {
             ]}
           />
         ) : null}
-      </View>
-
-      <View style={styles.qualityRow}>
-        <Badge label={quality.label} tone={quality.tone} />
+        {/* Broadcast-style status chip: rides IN the stage (DESIGN.md §8). */}
+        <View pointerEvents="none" style={styles.qualityChip}>
+          <Badge label={quality.label} tone={quality.tone} />
+        </View>
       </View>
 
       <SectionLabel>Tracer color</SectionLabel>
@@ -314,9 +314,10 @@ const styles = StyleSheet.create({
     borderRadius: LANDING_RING_SIZE / 2,
     borderWidth: 2,
   },
-  qualityRow: {
-    flexDirection: 'row',
-    marginTop: spacing.sm,
+  qualityChip: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
   },
   swatchRow: {
     flexDirection: 'row',

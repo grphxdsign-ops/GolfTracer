@@ -10,28 +10,58 @@ import { Easing, StyleSheet } from 'react-native';
 import type { TextStyle } from 'react-native';
 
 export const colors = {
-  /** Video/tracer/pose stages, segmented-control tracks — darkest tier. */
-  stage: '#060F0A',
-  background: '#0B1F14',
-  surface: '#122B1B',
-  surfaceRaised: '#1A3823',
-  /** Tooltips, popovers, chrome floating over video (tier 3). */
-  overlay: '#234630',
-  primary: '#4AC97E',
-  primaryPressed: '#3BAF6A',
-  accent: '#8FE3A8',
-  text: '#F2F7F3',
-  textMuted: '#A9C4B1',
-  textDisabled: '#5E7767',
+  /** Video/tracer/pose stages, segmented tracks, inputs — darkest tier. */
+  stage: '#0A0E07',
+  /** Screen background (tier 0) — warm olive-black. */
+  background: '#11180E',
+  /** Glass tier 1 — cards, list rows. Composites over whatever is beneath. */
+  surface: 'rgba(255,251,235,0.055)',
+  /** Glass tier 2 — selected rows, segmented thumb, secondary buttons. */
+  surfaceRaised: 'rgba(255,251,235,0.09)',
+  /** Glass tier 3 — chips/badges floating over video, tooltips. */
+  overlay: 'rgba(255,251,235,0.13)',
+  /** Top-edge catchlight hairline on glass cards. */
+  glassHighlight: 'rgba(255,253,245,0.10)',
+  primary: '#5BCE62',
+  primaryPressed: '#4AB851',
+  accent: '#A9E8A2',
+  /** Glassy warm cream — never opaque white. */
+  text: 'rgba(255,251,242,0.96)',
+  textMuted: 'rgba(255,247,235,0.66)',
+  textDisabled: 'rgba(255,247,235,0.38)',
   /** Label color on `primary` fills. */
-  textOnAccent: '#07130C',
-  borderSubtle: 'rgba(255,255,255,0.08)',
-  border: 'rgba(255,255,255,0.12)',
-  borderStrong: 'rgba(255,255,255,0.18)',
-  danger: '#E5484D',
-  success: '#4AC97E',
-  warning: '#E0A83E',
+  textOnAccent: '#0A1607',
+  borderSubtle: 'rgba(255,248,235,0.10)',
+  border: 'rgba(255,248,235,0.14)',
+  borderStrong: 'rgba(255,248,235,0.22)',
+  danger: '#E5544B',
+  /** Pressed fill for danger buttons — mirrors primaryPressed. */
+  dangerPressed: '#C93A3F',
+  success: '#5BCE62',
+  warning: '#E6AE4A',
 } as const;
+
+/**
+ * Tint a `#RRGGBB`/`#RGB` token to a translucent rgba() string. All derived
+ * tints (selected chips, done-step rings, trim regions) go through this so a
+ * palette change propagates everywhere (DESIGN.md §2). Non-hex input is
+ * returned unchanged — alpha-on-alpha stacking is a design smell, not a
+ * runtime error.
+ */
+export function alpha(hex: string, a: number): string {
+  const m3 = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(hex);
+  const m6 = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  const channels = m3
+    ? [m3[1]! + m3[1]!, m3[2]! + m3[2]!, m3[3]! + m3[3]!]
+    : m6
+      ? [m6[1]!, m6[2]!, m6[3]!]
+      : null;
+  if (!channels) {
+    return hex;
+  }
+  const [r, g, b] = channels.map((c) => parseInt(c, 16));
+  return `rgba(${r},${g},${b},${a})`;
+}
 
 /** Tracer ember palette — video-stage only, never in chrome (DESIGN.md §2). */
 export const tracer = {
@@ -55,6 +85,8 @@ export const radii = {
   sm: 8,
   md: 14,
   lg: 20,
+  /** Hero selection tiles (sport picker) — DESIGN.md §4. */
+  xl: 24,
   pill: 999,
 } as const;
 
@@ -67,6 +99,11 @@ export const typography = StyleSheet.create({
     letterSpacing: -1.2,
     color: colors.text,
     fontVariant: ['tabular-nums'],
+    // The one sanctioned text effect: a soft warm sheen on hero numerals
+    // (DESIGN.md §2) — glassy broadcast glow, not a drop shadow.
+    textShadowColor: 'rgba(255,236,200,0.28)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
   },
   title: {
     fontSize: 28,
@@ -123,7 +160,7 @@ export const typography = StyleSheet.create({
 /** Motion tokens — DESIGN.md §5. Transform/opacity only, native driver. */
 export const motion = {
   duration: {
-    press: 100,
+    press: 90,
     fast: 150,
     base: 200,
     gentle: 250,
@@ -135,8 +172,24 @@ export const motion = {
     exit: Easing.in(Easing.cubic),
     standard: Easing.out(Easing.cubic),
   },
+  /**
+   * Named spring configs (DESIGN.md §5) — single source so Button/SportTile
+   * never duplicate the numbers. `press` is the softened 2026 pass: damping
+   * raised 22→30 (ζ≈0.75, ~3% overshoot, "snappy without being abrupt")
+   * from the punchier ζ≈0.55 launch value, which read closer to a 2020
+   * Framer demo than a restrained 2026 flagship.
+   */
+  spring: {
+    press: { stiffness: 400, damping: 30, mass: 1 },
+  },
 } as const;
 
+// `sharedStyles` is layout-primitive only (screen/centered) — visual
+// components (card, button) live in the kit (Card, Button) and must not be
+// re-implemented here. The scaffold's original card/button/buttonText*
+// entries were deleted: zero callers remained (superseded by <Card>/
+// <Button> everywhere), and their token values had already drifted from
+// the real components (DESIGN.md §2/§5).
 export const sharedStyles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -150,33 +203,6 @@ export const sharedStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.lg,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.borderSubtle,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: radii.pill,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  buttonDisabled: {
-    backgroundColor: colors.surfaceRaised,
-  },
-  buttonText: {
-    color: colors.textOnAccent,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonTextDisabled: {
-    color: colors.textDisabled,
   },
 });
 

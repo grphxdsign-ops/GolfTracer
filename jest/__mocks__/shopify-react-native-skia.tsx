@@ -7,17 +7,21 @@ import type { ReactNode } from 'react';
 
 type AnyProps = Record<string, unknown> & { children?: ReactNode };
 
-const NullComponent = (_props: AnyProps): null => null;
+/**
+ * Each export gets its OWN null component so tests can discriminate
+ * elements by type (e.g. find the LinearGradient inside a Path).
+ */
+const makeNull = () => (_props: AnyProps): null => null;
 
-export const Canvas = NullComponent;
-export const Group = NullComponent;
-export const Path = NullComponent;
-export const Circle = NullComponent;
-export const Line = NullComponent;
-export const Paint = NullComponent;
-export const BlurMask = NullComponent;
-export const LinearGradient = NullComponent;
-export const RadialGradient = NullComponent;
+export const Canvas = makeNull();
+export const Group = makeNull();
+export const Path = makeNull();
+export const Circle = makeNull();
+export const Line = makeNull();
+export const Paint = makeNull();
+export const BlurMask = makeNull();
+export const LinearGradient = makeNull();
+export const RadialGradient = makeNull();
 
 export const vec = (x: number, y: number) => ({ x, y });
 

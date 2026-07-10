@@ -6,6 +6,10 @@
  * Shot-Tracer-style failure modes are handled explicitly: instead of ever
  * emitting a silently-wrong arc, the pipeline grades the track ('high' |
  * 'medium' | 'low' | 'failed') so the UI can offer retry tips.
+ *
+ * The whole run is bounded by `timeBudgetMs` (DESIGN §13): each stage adapts
+ * — stride, stop early, shrink the fallback window — rather than run long,
+ * and the quality grade reflects only what was actually analyzed.
  */
 import type { FrameSource, VideoFrame } from '../../../types/media';
 import type {
@@ -61,7 +65,29 @@ export interface RunTrackingOptions {
   tracker?: Partial<Omit<TrackerOptions, 'launchRoi'>>;
   style?: Partial<TracerStyle>;
   onProgress?: (fraction: number) => void;
+  /**
+   * Wall-clock budget for the whole run, ms (DESIGN §13). The pipeline adapts
+   * to finish inside it — frame striding past the 2 s prefix, an early
+   * tracking stop at 92%, a fallback pass bounded to the remaining budget —
+   * and never inflates the quality grade to hide the adaptation. Non-finite
+   * or non-positive disables all budget behavior. Default 3000.
+   */
+  timeBudgetMs?: number;
+  /** Clock for budget checks; injectable for tests. Default Date.now. */
+  clock?: () => number;
 }
+
+/** Pull-stage share of the budget that triggers frame striding. */
+const PULL_BUDGET_FRACTION = 0.45;
+/** Budget fraction after which tracking stops and grades what exists. */
+const TRACK_STOP_FRACTION = 0.92;
+/** Minimum budget fraction left for the offline fallback to be worth it. */
+const FALLBACK_MIN_FRACTION = 0.25;
+/**
+ * Frames inside this prefix are never strided: trimmed clips put impact
+ * early, and striding cannot know the impact index while pulling.
+ */
+const UNSTRIDED_PREFIX_MS = 2000;
 
 /**
  * Quality grading. Exported for direct unit testing.
@@ -100,18 +126,51 @@ export async function runTracking(
   const targetWidth = options.targetWidth ?? 480;
   const onProgress = options.onProgress ?? (() => undefined);
   const asset = frameSource.asset;
+  const timeBudgetMs = options.timeBudgetMs ?? 3000;
+  const clock = options.clock ?? Date.now;
+  const budgeted = Number.isFinite(timeBudgetMs) && timeBudgetMs > 0;
+  const startMs = clock();
+  const captureFps = asset.recordedFps ?? asset.fps;
 
   // 1. Pull frames, downsampling defensively if the source ignores
-  //    targetWidth. Progress 0 → 0.35.
+  //    targetWidth. Progress 0 → 0.35. When the pace measured over 24-frame
+  //    blocks projects the pull past its budget share, frames beyond the
+  //    un-strided prefix are strided (keep 1-of-2, then 1-of-3), floored at
+  //    ~30 effective fps for ≥60 fps captures and ~15 for 30 fps ones. Kept
+  //    frames keep their real timestamps, so Kalman dt and reveal timing are
+  //    unaffected.
   const estimatedTotal = Math.max(
     1,
     Math.round((asset.durationMs / 1000) * asset.fps),
   );
+  // 59.5/epsilon guards: NTSC rates (29.97, 59.94) must count as 30/60 fps.
+  const strideFloorFps = captureFps >= 59.5 ? 30 : 15;
+  const maxStride = Math.min(
+    3,
+    Math.max(1, Math.floor(captureFps / strideFloorFps + 1e-3)),
+  );
   const frames: VideoFrame[] = [];
+  let pulled = 0;
+  let stride = 1;
+  let pastPrefix = 0;
+  let firstTimestampMs = 0;
   for await (const raw of frameSource.frames({ targetWidth })) {
-    frames.push(raw.width > targetWidth ? downsample(raw, targetWidth) : raw);
-    onProgress(Math.min(0.35, (0.35 * frames.length) / estimatedTotal));
-    if (frames.length % 24 === 0) await yieldToEventLoop();
+    if (pulled === 0) firstTimestampMs = raw.timestampMs;
+    pulled++;
+    const inPrefix = raw.timestampMs - firstTimestampMs < UNSTRIDED_PREFIX_MS;
+    if (inPrefix || pastPrefix++ % stride === 0) {
+      frames.push(raw.width > targetWidth ? downsample(raw, targetWidth) : raw);
+    }
+    onProgress(Math.min(0.35, (0.35 * pulled) / estimatedTotal));
+    if (pulled % 24 === 0) {
+      if (budgeted && stride < maxStride) {
+        const projectedMs = ((clock() - startMs) / pulled) * estimatedTotal;
+        if (projectedMs > PULL_BUDGET_FRACTION * timeBudgetMs) {
+          stride = Math.min(stride + 1, maxStride);
+        }
+      }
+      await yieldToEventLoop();
+    }
   }
   if (frames.length < 8) {
     throw new Error(
@@ -194,7 +253,8 @@ export async function runTracking(
   //    the default tuned for high-fps time-steps is far too stiff at 30 fps —
   //    the filter's learned deceleration outlives the ball's and the gate
   //    rejects the real, still-decelerating ball. Caller options win.
-  const captureFps = asset.recordedFps ?? asset.fps;
+  //    Past 92% of the time budget stepping stops and the partial track is
+  //    graded as-is — gradeTrack never sees the frames that were skipped.
   const tracker = new BallTracker(detector, {
     launchRoi: impactRoi,
     seedRoi,
@@ -205,12 +265,20 @@ export async function runTracking(
     ...options.tracker,
   });
   const span = Math.max(1, frames.length - impactIndex);
+  const trackStartMs = clock();
+  let stepped = 0;
   for (let i = impactIndex; i < frames.length; i++) {
+    if (budgeted && clock() - startMs > TRACK_STOP_FRACTION * timeBudgetMs) {
+      break;
+    }
     await tracker.step(frames[i]!);
+    stepped++;
     if (!tracker.isActive) break;
     onProgress(0.4 + (0.52 * (i - impactIndex + 1)) / span);
     if ((i - impactIndex) % 12 === 0) await yieldToEventLoop();
   }
+  // Measured per-frame detection cost on this device — sizes the fallback.
+  const stepMs = stepped > 0 ? (clock() - trackStartMs) / stepped : 0;
   onProgress(0.92);
 
   let quality = gradeTrack(
@@ -229,35 +297,53 @@ export async function runTracking(
   //     post-impact frame and keep the best temporally-consistent chain —
   //     the ball is the only object whose smooth decelerating climb spans
   //     the window. Skipped when the caller injected a custom detector,
-  //     which cannot be re-instantiated here.
-  if (
+  //     which cannot be re-instantiated here, and when less than a quarter
+  //     of the time budget remains — a rescue that blows the budget is worse
+  //     than an honest failed grade.
+  const wantsFallback =
     (quality === 'failed' || quality === 'low' || rawObservations.length < 10) &&
     !options.detector &&
     captureFps > 0 &&
-    captureFps <= 60
-  ) {
-    const fallbackDetector = createDetector(options.detectorKind ?? 'classical', {
-      ...detectorOptions,
-      polarity: 'auto',
-      minRadiusPx: 1,
-    });
-    for (let i = warmStart; i < impactIndex; i++) {
-      await fallbackDetector.detect(frames[i]!);
-    }
-    const chain = await associateGlobally(
-      frames.slice(impactIndex),
-      fallbackDetector,
-      { searchRoi: fallbackSearchRoi(seedRoi, width, height) },
-    );
-    if (chain.length > rawObservations.length) {
-      rawObservations = chain;
-      rawPoints = chain.map((o) => ({
-        timestampMs: o.timestampMs,
-        interpolated: false,
-      }));
-      landingPointIndex = undefined;
-      // Chains have no coasted points, so grade purely on coverage.
-      quality = chain.length >= 15 ? 'high' : chain.length >= 8 ? 'medium' : 'low';
+    captureFps <= 60;
+  if (wantsFallback) {
+    const remainingMs = timeBudgetMs - (clock() - startMs);
+    if (!budgeted || remainingMs > FALLBACK_MIN_FRACTION * timeBudgetMs) {
+      // associateGlobally has no budget input and frames are its cost driver,
+      // so the window is sliced to what the tracking stage's measured
+      // per-frame cost says fits (warm-up detects count against it too).
+      let window = frames.slice(impactIndex);
+      if (budgeted && stepMs > 0) {
+        const fit =
+          Math.floor(remainingMs / stepMs) - (impactIndex - warmStart);
+        window = window.slice(0, Math.max(0, fit));
+      }
+      if (window.length > 0) {
+        const fallbackDetector = createDetector(
+          options.detectorKind ?? 'classical',
+          {
+            ...detectorOptions,
+            polarity: 'auto',
+            minRadiusPx: 1,
+          },
+        );
+        for (let i = warmStart; i < impactIndex; i++) {
+          await fallbackDetector.detect(frames[i]!);
+        }
+        const chain = await associateGlobally(window, fallbackDetector, {
+          searchRoi: fallbackSearchRoi(seedRoi, width, height),
+        });
+        if (chain.length > rawObservations.length) {
+          rawObservations = chain;
+          rawPoints = chain.map((o) => ({
+            timestampMs: o.timestampMs,
+            interpolated: false,
+          }));
+          landingPointIndex = undefined;
+          // Chains have no coasted points, so grade purely on coverage.
+          quality =
+            chain.length >= 15 ? 'high' : chain.length >= 8 ? 'medium' : 'low';
+        }
+      }
     }
   }
 

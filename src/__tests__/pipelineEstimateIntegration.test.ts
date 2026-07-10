@@ -32,7 +32,10 @@ describe('pipeline → estimateDistance at native resolution', () => {
       seed: 11,
     });
     const frameSource = makeFrameSource(flight.frames);
-    const { track } = await runTracking(frameSource);
+    // Frozen clock: this synthetic run takes tens of seconds of jest
+    // wall-clock, which would trip the real 3 s default budget (DESIGN §12)
+    // and make results machine-speed-dependent.
+    const { track } = await runTracking(frameSource, { clock: () => 0 });
     expect(track.frameWidth).toBe(960);
     expect(track.landingPointIndex).toBeDefined();
 

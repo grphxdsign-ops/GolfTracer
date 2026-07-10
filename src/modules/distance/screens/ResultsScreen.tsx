@@ -9,7 +9,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -20,7 +19,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { EstimationMethod, RootStackParamList } from '../../../types';
 import { useSessionStore } from '../../../state/sessionStore';
+import {
+  clubAverages,
+  MIN_SHOTS_FOR_DELTA,
+  useHistoryStore,
+} from '../../../state/historyStore';
 import { useBallPointStore } from '../../tracking/screens/ballPointStore';
+import { navigateTab, resetToTab } from '../../../app/navigation/navTabs';
+import { normalizeTrace } from '../../sessions/tracePreview';
 import {
   colors,
   motion,
@@ -32,11 +38,13 @@ import {
   Badge,
   Button,
   Card,
+  Chevron,
   Chip,
   EmptyState,
-  ProgressBar,
   SectionLabel,
+  SegmentedMeter,
   StatTile,
+  TrendPill,
   useReducedMotion,
 } from '../../../app/components';
 import {
@@ -73,6 +81,12 @@ const METHOD_META: Record<
     tone: 'warning',
   },
 };
+
+/** Deltas render as whole yards — consistent decimals per session (§8). */
+const formatYards = (n: number): string => String(Math.round(n));
+
+/** 'pitching-wedge' → 'pitching wedge' for the delta caption. */
+const clubLabelOf = (club: string): string => club.replace(/-/g, ' ');
 
 /**
  * Hero carry number with a one-shot count-up on reveal (DESIGN.md §1/§5) —
@@ -171,10 +185,11 @@ function FitDetails({ estimate }: { estimate: DistanceEstimateResult }) {
         accessibilityLabel="Toggle fit details"
         accessibilityState={{ expanded }}
         onPress={() => setExpanded((v) => !v)}
+        hitSlop={{ top: spacing.xs, bottom: spacing.xs }}
         style={styles.fitDetailsHeader}
       >
         <Text style={typography.subtitle}>Fit details</Text>
-        <Text style={styles.fitDetailsChevron}>{expanded ? '▾' : '▸'}</Text>
+        <Chevron rotateDeg={expanded ? 90 : 0} color={colors.textMuted} />
       </Pressable>
       {expanded ? (
         <Animated.View
@@ -236,7 +251,7 @@ function ConfidenceMeter({ confidence }: { confidence: number }) {
   const pct = Math.round(confidence * 100);
   return (
     <View style={styles.meter}>
-      <ProgressBar
+      <SegmentedMeter
         progress={confidence}
         accessibilityLabel={`Confidence ${pct} percent`}
       />
@@ -250,12 +265,21 @@ function ConfidenceMeter({ confidence }: { confidence: number }) {
 export function ResultsScreen() {
   const navigation = useNavigation<ResultsNavigation>();
   const insets = useSafeAreaInsets();
+  // Drives the hero card's reactive catchlight (DESIGN.md §5/§7) — never an
+  // autonomous loop, only moves while the user scrolls.
+  const scrollY = useRef(new Animated.Value(0)).current;
   const trackingResult = useSessionStore((s) => s.trackingResult);
   const calibration = useSessionStore((s) => s.calibration);
   const video = useSessionStore((s) => s.video);
   const setDistance = useSessionStore((s) => s.setDistance);
   const reset = useSessionStore((s) => s.reset);
   const resetDraft = useDistanceStore((s) => s.resetDraft);
+  // The club lives in the distance draft (published unchanged into the
+  // calibration by CalibrationScreen) — it keys the session-history record
+  // and the "vs your club average" comparison.
+  const club = useDistanceStore((s) => s.club);
+  const addShot = useHistoryStore((s) => s.addShot);
+  const historyShots = useHistoryStore((s) => s.shots);
   // The user's tap-to-place-ball point (native px) anchors the DTL fit's
   // tee ray when present.
   const ballPoint = useBallPointStore((s) => s.ballPoint);
@@ -280,24 +304,65 @@ export function ResultsScreen() {
     );
   }, [trackingResult, calibration, video, ballPoint]);
 
+  // Identity of the estimate already recorded to history — guards against
+  // double-adds when the effect re-runs for the same resolved estimate.
+  const recordedEstimate = useRef<DistanceEstimateResult | null>(null);
+  // The history id of THIS shot, so the club average excludes it.
+  const [recordedShotId, setRecordedShotId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (estimate) {
-      setDistance({
-        carryYards: estimate.carryYards,
-        totalYards: estimate.totalYards,
-        apexFeet: estimate.apexFeet,
-        ballSpeedMph: estimate.ballSpeedMph,
-        launchAngleDeg: estimate.launchAngleDeg,
-        confidence: estimate.confidence,
-        method: estimate.method,
-      });
+    if (!estimate) {
+      return;
     }
-  }, [estimate, setDistance]);
+    setDistance({
+      carryYards: estimate.carryYards,
+      totalYards: estimate.totalYards,
+      apexFeet: estimate.apexFeet,
+      ballSpeedMph: estimate.ballSpeedMph,
+      launchAngleDeg: estimate.launchAngleDeg,
+      confidence: estimate.confidence,
+      method: estimate.method,
+    });
+    if (recordedEstimate.current === estimate) {
+      return;
+    }
+    recordedEstimate.current = estimate;
+    addShot({
+      sport: 'golf',
+      quality: trackingResult?.track.quality ?? 'failed',
+      club,
+      method: estimate.method,
+      carryYards: estimate.carryYards,
+      totalYards: estimate.totalYards,
+      apexFeet: estimate.apexFeet,
+      ballSpeedMph: estimate.ballSpeedMph,
+      launchAngleDeg: estimate.launchAngleDeg,
+      confidence: estimate.confidence,
+      // Persist the redrawable trace — history keeps the tracer (§11).
+      tracePoints: trackingResult
+        ? normalizeTrace(
+            trackingResult.track.smoothedPath,
+            trackingResult.track.frameWidth,
+            trackingResult.track.frameHeight,
+          )
+        : undefined,
+    });
+    setRecordedShotId(useHistoryStore.getState().shots[0]?.id ?? null);
+  }, [estimate, setDistance, addShot, club, trackingResult]);
+
+  // Averages across PRIOR shots with this club (the current shot and
+  // club-prior guesses are excluded by clubAverages itself).
+  const averages = useMemo(
+    () => clubAverages(historyShots, club, recordedShotId ?? undefined),
+    [historyShots, club, recordedShotId],
+  );
 
   const handleNewShot = () => {
     reset();
     resetDraft();
-    navigation.navigate('Home');
+    // Replace the finished flow with the tab shell — back never re-enters
+    // a dead capture flow.
+    resetToTab(navigation, 'Home');
   };
 
   if (!estimate) {
@@ -311,7 +376,7 @@ export function ResultsScreen() {
               : 'Complete calibration first.'
           }
           actionLabel="Home"
-          onAction={() => navigation.navigate('Home')}
+          onAction={() => navigateTab(navigation, 'Home')}
         />
       </View>
     );
@@ -319,11 +384,19 @@ export function ResultsScreen() {
 
   const meta = METHOD_META[estimate.method];
   const isFallback = estimate.method === 'club-prior';
+  // Honest deltas only: enough prior history AND a real measurement — a
+  // club-prior guess never wears a trend against its own prior (§8).
+  const showDeltas = !isFallback && averages.count >= MIN_SHOTS_FOR_DELTA;
 
   return (
-    <ScrollView
+    <Animated.ScrollView
       style={sharedStyles.screen}
       contentContainerStyle={{ paddingBottom: spacing.md + insets.bottom }}
+      onScroll={Animated.event(
+        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+        { useNativeDriver: true },
+      )}
+      scrollEventThrottle={16}
     >
       <View style={styles.badgeRow}>
         <Badge
@@ -341,9 +414,23 @@ export function ResultsScreen() {
         {meta.description}
       </Text>
 
-      <Card variant="raised">
-        <HeroCarry carryYards={estimate.carryYards} approx={isFallback} />
-        <View style={styles.totalTile}>
+      <Card variant="raised" scrollY={scrollY}>
+        <View style={styles.statRow}>
+          <HeroCarry carryYards={estimate.carryYards} approx={isFallback} />
+          {showDeltas && averages.carryYards !== undefined ? (
+            <View style={styles.trendSlot}>
+              <TrendPill
+                testID="results-carry-trend"
+                delta={estimate.carryYards - averages.carryYards}
+                unit="yd"
+                format={formatYards}
+                goodDirection="up"
+                base={averages.carryYards}
+              />
+            </View>
+          ) : null}
+        </View>
+        <View style={[styles.totalTile, styles.statRow]}>
           <StatTile
             size="standard"
             label="Total"
@@ -351,7 +438,24 @@ export function ResultsScreen() {
             unit="yd"
             approx={isFallback}
           />
+          {showDeltas && averages.totalYards !== undefined ? (
+            <View style={styles.trendSlot}>
+              <TrendPill
+                testID="results-total-trend"
+                delta={estimate.totalYards - averages.totalYards}
+                unit="yd"
+                format={formatYards}
+                goodDirection="up"
+                base={averages.totalYards}
+              />
+            </View>
+          ) : null}
         </View>
+        {showDeltas ? (
+          <Text style={styles.deltaCaption}>
+            vs your {clubLabelOf(club)} average ({averages.count} shots)
+          </Text>
+        ) : null}
         <ConfidenceMeter confidence={estimate.confidence} />
       </Card>
 
@@ -389,10 +493,10 @@ export function ResultsScreen() {
         label="Home"
         variant="ghost"
         size="md"
-        onPress={() => navigation.navigate('Home')}
+        onPress={() => navigateTab(navigation, 'Home')}
         style={styles.homeAction}
       />
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
@@ -411,6 +515,18 @@ const styles = StyleSheet.create({
   totalTile: {
     marginTop: spacing.md,
   },
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  trendSlot: {
+    marginLeft: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  deltaCaption: {
+    ...typography.caption,
+    marginTop: spacing.xs,
+  },
   meter: {
     marginTop: spacing.md,
   },
@@ -427,10 +543,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  fitDetailsChevron: {
-    ...typography.subtitle,
-    color: colors.textMuted,
   },
   detailRow: {
     flexDirection: 'row',

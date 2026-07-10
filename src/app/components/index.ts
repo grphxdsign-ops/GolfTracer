@@ -7,6 +7,8 @@ export { Button } from './Button';
 export type { ButtonProps } from './Button';
 export { Card } from './Card';
 export type { CardProps } from './Card';
+export { Chevron } from './Chevron';
+export type { ChevronProps } from './Chevron';
 export { Chip } from './Chip';
 export type { ChipProps } from './Chip';
 export { EmptyState } from './EmptyState';
@@ -23,6 +25,8 @@ export { ScreenHeader } from './ScreenHeader';
 export type { ScreenHeaderProps } from './ScreenHeader';
 export { SectionLabel } from './SectionLabel';
 export type { SectionLabelProps } from './SectionLabel';
+export { SegmentedMeter } from './SegmentedMeter';
+export type { SegmentedMeterProps } from './SegmentedMeter';
 export { SegmentedControl } from './SegmentedControl';
 export type {
   SegmentedControlOption,
@@ -30,6 +34,18 @@ export type {
 } from './SegmentedControl';
 export { Skeleton } from './Skeleton';
 export type { SkeletonProps } from './Skeleton';
+export { SportIcon } from './SportIcon';
+export type { SportIconProps } from './SportIcon';
+export { SportTile } from './SportTile';
+export type { SportTileProps } from './SportTile';
 export { StatTile } from './StatTile';
 export type { StatTileProps } from './StatTile';
+export { TracerLoader } from './TracerLoader';
+export type { TracerLoaderProps } from './TracerLoader';
+export { TracerMark } from './TracerMark';
+export type { TracerMarkProps } from './TracerMark';
+export { TrendPill } from './TrendPill';
+export type { TrendPillProps } from './TrendPill';
+export { useCardHandoff } from './useCardHandoff';
+export type { CardHandoff } from './useCardHandoff';
 export { useReducedMotion } from './useReducedMotion';

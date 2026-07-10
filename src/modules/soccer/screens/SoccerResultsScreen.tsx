@@ -17,8 +17,11 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { RootStackParamList } from '../../../types/navigation';
+import type { TrackQuality } from '../../../types/tracking';
+import { useHistoryStore } from '../../../state/historyStore';
 import { colors, motion, radii, sharedStyles, spacing, typography } from '../../../app/theme';
 import {
+  Badge,
   Button,
   Card,
   EmptyState,
@@ -31,6 +34,7 @@ import {
   type SoccerTakeResult,
 } from '../../sports/sportsSessionStore';
 import { navigateSport } from '../../sports/navSport';
+import { navigateTab } from '../../../app/navigation/navTabs';
 import {
   type JointAngleTable,
   type SideJointAngles,
@@ -44,34 +48,50 @@ const ENTRANCE_OFFSET = 8;
 /** Stagger between the three result groups (DESIGN.md §5: ≤5 × 60ms). */
 const ENTRANCE_STAGGER_MS = 60;
 
+/**
+ * Track quality proxy for a soccer take: a measured goal-plane crossing
+ * means the 3D track held to the goal; anchored samples without a crossing
+ * are a partial track; nothing anchored is a weak one.
+ */
+function takeQuality(take: SoccerTakeResult): TrackQuality {
+  if (take.crossing) {
+    return 'high';
+  }
+  return take.samples.length > 0 ? 'medium' : 'low';
+}
+
 function goalHeadline(take: SoccerTakeResult): {
   label: string;
   color: string;
   detail: string;
 } {
+  // Crossing coordinates come from monocular depth reconstruction — one
+  // decimal (~10 cm) is the honest bound; two implied centimeter accuracy
+  // the pipeline does not have (DESIGN.md §8 fake-precision rule). Verdict
+  // labels are sentence case, no exclamation (§8 copy rule).
   const g = take.crossing;
   if (g?.isGoal) {
     return {
-      label: 'GOAL!',
+      label: 'Goal',
       color: colors.success,
       detail:
         g.xM !== undefined && g.yM !== undefined
-          ? `Crossed the line ${g.xM.toFixed(2)} m from the left post at a height of ${g.yM.toFixed(2)} m`
+          ? `Crossed the line ~${g.xM.toFixed(1)} m from the left post at a height of ~${g.yM.toFixed(1)} m`
           : 'Crossed the goal line inside the posts',
     };
   }
   if (g?.crossed) {
     return {
-      label: 'NO GOAL',
+      label: 'No goal',
       color: colors.danger,
       detail:
         g.xM !== undefined && g.yM !== undefined
-          ? `Crossed the goal plane outside: ${g.xM.toFixed(2)} m from the left post, height ${g.yM.toFixed(2)} m`
+          ? `Crossed the goal plane outside: ~${g.xM.toFixed(1)} m from the left post, height ~${g.yM.toFixed(1)} m`
           : 'Crossed the goal plane outside the frame',
     };
   }
   return {
-    label: 'NO GOAL',
+    label: 'No goal',
     color: colors.danger,
     detail: 'The ball never reached the goal line',
   };
@@ -192,6 +212,24 @@ export function SoccerResultsScreen() {
   const take = result?.takes[result.takes.length - 1] ?? null;
   const speedValue = useCountUp(Math.round(take?.peakSpeedKmh ?? 0), reduced);
 
+  // Record each analyzed take to session history exactly once — the ref
+  // pins the take identity so re-renders never double-add.
+  const addShot = useHistoryStore((s) => s.addShot);
+  const recordedTake = useRef<SoccerTakeResult | null>(null);
+  useEffect(() => {
+    if (!take || recordedTake.current === take) {
+      return;
+    }
+    recordedTake.current = take;
+    addShot({
+      sport: 'soccer',
+      quality: takeQuality(take),
+      // History speaks the sport's canon unit — the analyzer's native km/h.
+      shotSpeedKmh: take.peakSpeedKmh,
+      onTarget: take.crossing?.isGoal ?? false,
+    });
+  }, [take, addShot]);
+
   if (!result || !take) {
     return (
       <View style={sharedStyles.centered}>
@@ -231,16 +269,19 @@ export function SoccerResultsScreen() {
 
       <Reveal order={1} reduced={reduced}>
         <Card style={styles.sectionCard}>
+          {/* Monocular speed is an estimate — it wears the ~ (DESIGN.md §8);
+              distance likewise rounds to the honest whole meter. */}
           <StatTile
             size="hero"
             label="Peak shot speed"
             value={speedValue}
             unit="km/h"
+            approx
           />
           {take.distanceToGoalM !== null ? (
             <Text style={styles.distanceCaption}>
-              Ball distance to goal line at contact:{' '}
-              {take.distanceToGoalM.toFixed(1)} m
+              Ball distance to goal line at contact: ~
+              {Math.round(take.distanceToGoalM)} m
             </Text>
           ) : null}
         </Card>
@@ -256,7 +297,6 @@ export function SoccerResultsScreen() {
             onLayout={(e) => setStageWidth(e.nativeEvent.layout.width)}
             style={styles.stage}
           >
-            <Text style={typography.caption}>Contact freeze-frame</Text>
             {pose && stageWidth > 0 ? (
               <PoseOverlay
                 pose={pose}
@@ -266,6 +306,10 @@ export function SoccerResultsScreen() {
                 viewHeight={STAGE_HEIGHT}
               />
             ) : null}
+            {/* Broadcast-style status chip: rides IN the stage (DESIGN.md §8). */}
+            <View pointerEvents="none" style={styles.stageChip}>
+              <Badge label="Contact freeze-frame" />
+            </View>
           </View>
           {take.jointAnglesAtContact ? (
             <AngleTable table={take.jointAnglesAtContact} />
@@ -301,7 +345,7 @@ export function SoccerResultsScreen() {
       <Button
         label="Home"
         variant="ghost"
-        onPress={() => navigation.navigate('Home')}
+        onPress={() => navigateTab(navigation, 'Home')}
       />
     </ScrollView>
   );
@@ -347,10 +391,13 @@ const styles = StyleSheet.create({
     height: STAGE_HEIGHT,
     borderRadius: radii.lg,
     backgroundColor: colors.stage,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: spacing.sm,
     overflow: 'hidden',
+  },
+  stageChip: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
   },
   tableRow: {
     flexDirection: 'row',

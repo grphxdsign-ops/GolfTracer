@@ -17,11 +17,12 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 
 const mockNavigate = jest.fn();
+const mockReset = jest.fn();
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
   return {
     ...actual,
-    useNavigation: () => ({ navigate: mockNavigate }),
+    useNavigation: () => ({ navigate: mockNavigate, reset: mockReset }),
   };
 });
 
@@ -109,7 +110,7 @@ describe('PerfectedResultsScreen', () => {
     });
   });
 
-  it('clears the result and navigates home on Done', () => {
+  it('clears the result and replaces the stack with Home on Done', () => {
     useSportsSessionStore.getState().setPerfectedResult(
       buildPerfectedResult({
         sport: 'soccer',
@@ -121,6 +122,9 @@ describe('PerfectedResultsScreen', () => {
     renderWithNav(<PerfectedResultsScreen />);
     fireEvent.press(screen.getByText('Done'));
     expect(useSportsSessionStore.getState().perfectedResult).toBeNull();
-    expect(mockNavigate).toHaveBeenCalledWith('Home');
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: 'Tabs', params: { screen: 'Home' } }],
+    });
   });
 });
